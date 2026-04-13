@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment variables (all paths)
+**/.env
+**/.env.*
+!**/.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+
+# Prisma
+/generated/prisma
+
+# Logs
+*.log
+
+# Uploads
+uploads/
+
+# Claude
+.claude/
+CLAUDE.md

@@ -1,0 +1,27 @@
+{
+  "name": "tehriehlbudget",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Self-hosted personal finance application",
+  "scripts": {
+    "dev:frontend": "pnpm --filter tehriehlbudget-frontend dev",
+    "dev:backend": "pnpm --filter tehriehlbudget-backend start:dev",
+    "build:frontend": "pnpm --filter tehriehlbudget-frontend build",
+    "build:backend": "pnpm --filter tehriehlbudget-backend build",
+    "test": "pnpm --filter tehriehlbudget-backend test && pnpm --filter tehriehlbudget-frontend test",
+    "test:backend": "pnpm --filter tehriehlbudget-backend test",
+    "test:frontend": "pnpm --filter tehriehlbudget-frontend test",
+    "test:coverage": "pnpm --filter tehriehlbudget-backend test:cov && pnpm --filter tehriehlbudget-frontend test:coverage",
+    "lint": "pnpm --filter tehriehlbudget-backend lint && pnpm --filter tehriehlbudget-frontend lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\""
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/engines",
+      "prisma",
+      "unrs-resolver"
+    ]
+  }
+}
