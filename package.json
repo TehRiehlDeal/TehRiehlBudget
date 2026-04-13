@@ -19,6 +19,7 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@nestjs/core",
+      "@prisma/client",
       "@prisma/engines",
       "prisma",
       "unrs-resolver"
