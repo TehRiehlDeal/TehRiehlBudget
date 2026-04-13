@@ -16,7 +16,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from 'recharts';
 
 function formatCurrency(value: number) {
@@ -123,14 +122,14 @@ export function Dashboard() {
                     cy="50%"
                     outerRadius={80}
                     label={({ name, percent }) =>
-                      `${name} ${(percent * 100).toFixed(0)}%`
+                      `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
                     }
                   >
                     {spendingByCategory.map((entry, i) => (
                       <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -150,7 +149,7 @@ export function Dashboard() {
                 <BarChart data={incomeExpenseData}>
                   <XAxis dataKey="name" />
                   <YAxis tickFormatter={(v) => `$${v}`} />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                   <Bar dataKey="value" fill="var(--color-primary)" radius={[4, 4, 0, 0]}>
                     {incomeExpenseData.map((entry, i) => (
                       <Cell

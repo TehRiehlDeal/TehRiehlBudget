@@ -37,7 +37,7 @@ interface TransactionsState {
   deleteTransaction: (id: string) => Promise<void>;
 }
 
-export const useTransactionsStore = create<TransactionsState>((set, get) => ({
+export const useTransactionsStore = create<TransactionsState>((set) => ({
   transactions: [],
   total: 0,
   page: 1,

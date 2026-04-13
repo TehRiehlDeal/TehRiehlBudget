@@ -2,7 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AggregationsService } from './aggregations.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/user.decorator';
-import { User } from '@prisma/client';
+import type { User } from '@prisma/client';
 
 class DateRangeQuery {
   startDate: string;

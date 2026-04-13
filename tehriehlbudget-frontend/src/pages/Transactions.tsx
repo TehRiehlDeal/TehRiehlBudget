@@ -118,13 +118,13 @@ export function Transactions() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Transactions</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 size-4" /> Add Transaction</Button>
+          <DialogTrigger render={<Button />}>
+            <Plus className="mr-2 size-4" /> Add Transaction
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>New Transaction</DialogTitle></DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
-              <Select value={accountId} onValueChange={setAccountId}>
+              <Select value={accountId} onValueChange={(v) => setAccountId(v ?? '')}>
                 <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
                 <SelectContent>
                   {accounts.map((a) => (
@@ -132,7 +132,7 @@ export function Transactions() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={type} onValueChange={setType}>
+              <Select value={type} onValueChange={(v) => setType(v ?? 'EXPENSE')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {TRANSACTION_TYPES.map((t) => (
@@ -142,7 +142,7 @@ export function Transactions() {
               </Select>
               <Input type="number" step="0.01" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} required />
               <Input placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} required />
-              <Select value={categoryId} onValueChange={setCategoryId}>
+              <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
                 <SelectTrigger><SelectValue placeholder="Category (optional)" /></SelectTrigger>
                 <SelectContent>
                   {categories.map((c) => (
@@ -175,7 +175,7 @@ export function Transactions() {
       <div className="flex flex-wrap gap-3">
         <Select
           value={filters.accountId || 'all'}
-          onValueChange={(v) => setFilters((f) => ({ ...f, accountId: v === 'all' ? undefined : v }))}
+          onValueChange={(v) => setFilters((f) => ({ ...f, accountId: v === 'all' || v === null ? undefined : v }))}
         >
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="All accounts" /></SelectTrigger>
           <SelectContent>
@@ -188,7 +188,7 @@ export function Transactions() {
 
         <Select
           value={filters.type || 'all'}
-          onValueChange={(v) => setFilters((f) => ({ ...f, type: v === 'all' ? undefined : v }))}
+          onValueChange={(v) => setFilters((f) => ({ ...f, type: v === 'all' || v === null ? undefined : v }))}
         >
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="All types" /></SelectTrigger>
           <SelectContent>

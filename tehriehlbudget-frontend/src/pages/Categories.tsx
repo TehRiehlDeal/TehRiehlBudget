@@ -75,8 +75,8 @@ export function Categories() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Categories</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 size-4" /> Add Category</Button>
+          <DialogTrigger render={<Button />}>
+            <Plus className="mr-2 size-4" /> Add Category
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>New Category</DialogTitle></DialogHeader>

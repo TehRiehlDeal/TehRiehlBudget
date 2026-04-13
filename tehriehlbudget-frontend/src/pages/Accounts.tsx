@@ -91,8 +91,8 @@ export function Accounts() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Accounts</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 size-4" /> Add Account</Button>
+          <DialogTrigger render={<Button />}>
+            <Plus className="mr-2 size-4" /> Add Account
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>New Account</DialogTitle></DialogHeader>
