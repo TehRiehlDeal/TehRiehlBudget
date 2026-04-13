@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AggregationsService } from '../aggregations/aggregations.service';
-import Anthropic from '@anthropic-ai/sdk';
 
 const PII_FIELDS = [
   'userId',
@@ -15,15 +14,15 @@ const PII_FIELDS = [
 
 @Injectable()
 export class AdvisorService {
-  private anthropic: Anthropic;
+  private ollamaUrl: string;
+  private ollamaModel: string;
 
   constructor(
     private aggregations: AggregationsService,
     private config: ConfigService,
   ) {
-    this.anthropic = new Anthropic({
-      apiKey: this.config.getOrThrow<string>('ANTHROPIC_API_KEY'),
-    });
+    this.ollamaUrl = this.config.get<string>('OLLAMA_URL') || 'http://localhost:11434';
+    this.ollamaModel = this.config.get<string>('OLLAMA_MODEL') || 'llama3';
   }
 
   stripPII(data: any): any {
@@ -71,14 +70,22 @@ ${anonymized.categories.map((c: any) => `- ${c.name}: $${c.amount}`).join('\n')}
 
 Provide specific, numbered insights. Be encouraging but honest.`;
 
-    const response = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
+    const response = await fetch(`${this.ollamaUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: this.ollamaModel,
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+      }),
     });
 
-    const insights =
-      response.content[0].type === 'text' ? response.content[0].text : '';
+    if (!response.ok) {
+      throw new Error(`Ollama request failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const insights = data.message?.content || '';
 
     return { insights, generatedAt: new Date().toISOString() };
   }

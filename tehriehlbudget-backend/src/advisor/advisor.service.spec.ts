@@ -5,17 +5,9 @@ import { AggregationsService } from '../aggregations/aggregations.service';
 
 jest.mock('@prisma/client', () => ({ PrismaClient: class {} }));
 
-// Mock Anthropic SDK
-jest.mock('@anthropic-ai/sdk', () => {
-  return {
-    __esModule: true,
-    default: jest.fn().mockImplementation(() => ({
-      messages: {
-        create: jest.fn(),
-      },
-    })),
-  };
-});
+// Mock global fetch for Ollama calls
+const mockFetch = jest.fn();
+global.fetch = mockFetch;
 
 describe('AdvisorService', () => {
   let service: AdvisorService;
@@ -37,7 +29,13 @@ describe('AdvisorService', () => {
   };
 
   const mockConfig = {
-    getOrThrow: jest.fn().mockReturnValue('test-api-key'),
+    get: jest.fn((key: string) => {
+      const vals: Record<string, string> = {
+        OLLAMA_URL: 'http://localhost:11434',
+        OLLAMA_MODEL: 'llama3',
+      };
+      return vals[key];
+    }),
   };
 
   beforeEach(async () => {
@@ -91,24 +89,35 @@ describe('AdvisorService', () => {
   });
 
   describe('getAdvice', () => {
-    it('should fetch aggregation data and return AI insights', async () => {
-      const mockClient = service['anthropic'];
-      (mockClient.messages.create as jest.Mock).mockResolvedValue({
-        content: [
-          {
-            type: 'text',
-            text: '1. Your dining out spending is 14% of income — consider meal prepping.\n2. Strong savings rate of 36% — keep it up.\n3. Consider setting a monthly entertainment budget.',
+    it('should call Ollama and return insights', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          message: {
+            content: '1. Great savings rate!\n2. Reduce dining costs.',
           },
-        ],
+        }),
       });
 
       const result = await service.getAdvice(userId);
 
       expect(mockAggregations.getSummary).toHaveBeenCalled();
       expect(mockAggregations.getSpendingByCategory).toHaveBeenCalled();
-      expect(mockClient.messages.create).toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:11434/api/chat',
+        expect.objectContaining({ method: 'POST' }),
+      );
       expect(result).toHaveProperty('insights');
-      expect(typeof result.insights).toBe('string');
+      expect(result.insights).toContain('savings rate');
+    });
+
+    it('should throw on Ollama failure', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        statusText: 'Service Unavailable',
+      });
+
+      await expect(service.getAdvice(userId)).rejects.toThrow('Ollama request failed');
     });
   });
 });
