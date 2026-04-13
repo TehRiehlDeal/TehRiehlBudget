@@ -36,8 +36,8 @@ export class TransactionsService {
 
   async findAll(userId: string, filters: TransactionFilters) {
     const { accountId, categoryId, type, startDate, endDate } = filters;
-    const page = filters.page ?? 1;
-    const limit = filters.limit ?? 20;
+    const page = Number(filters.page) || 1;
+    const limit = Number(filters.limit) || 20;
 
     const where: any = { userId };
 

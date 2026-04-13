@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+function parseDateRange(startDate?: string, endDate?: string) {
+  const now = new Date();
+  const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = endDate ? new Date(endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { start, end };
+}
+
 @Injectable()
 export class AggregationsService {
   constructor(private prisma: PrismaService) {}
@@ -31,7 +38,7 @@ export class AggregationsService {
       where: {
         userId,
         type: { in: ['INCOME', 'EXPENSE'] },
-        date: { gte: new Date(startDate), lte: new Date(endDate) },
+        date: { gte: parseDateRange(startDate, endDate).start, lte: parseDateRange(startDate, endDate).end },
       },
       _sum: { amount: true },
     });
@@ -52,7 +59,7 @@ export class AggregationsService {
         userId,
         type: 'EXPENSE',
         categoryId: { not: null },
-        date: { gte: new Date(startDate), lte: new Date(endDate) },
+        date: { gte: parseDateRange(startDate, endDate).start, lte: parseDateRange(startDate, endDate).end },
       },
       _sum: { amount: true },
     });
