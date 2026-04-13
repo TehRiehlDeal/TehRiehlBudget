@@ -10,7 +10,6 @@ import { CategoriesModule } from './categories/categories.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { FilesModule } from './files/files.module';
 import { AggregationsModule } from './aggregations/aggregations.module';
-import { PlaidModule } from './plaid/plaid.module';
 import { AdvisorModule } from './advisor/advisor.module';
 
 @Module({
@@ -24,7 +23,6 @@ import { AdvisorModule } from './advisor/advisor.module';
     TransactionsModule,
     FilesModule,
     AggregationsModule,
-    PlaidModule,
     AdvisorModule,
   ],
   controllers: [AppController],

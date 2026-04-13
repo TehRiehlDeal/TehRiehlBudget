@@ -98,13 +98,6 @@
 
 ## Phase 4: Advanced Integrations
 
-### Plaid Integration
-- [x] Write tests for Plaid service (link token creation, token exchange, account sync, transaction sync)
-- [x] Implement Plaid backend module (link tokens, public token exchange, webhook handler)
-- [x] Write tests for Plaid Link frontend flow
-- [x] Build Plaid Link UI (connect account flow, linked accounts management)
-- [x] Implement sync logic to pull live balances and transactions from linked institutions
-
 ### AI Financial Advisor
 - [x] Write tests for PII stripping utility (ensure no names, account numbers, or identifiers leak)
 - [x] Write tests for AI advisor service (prompt construction, response parsing, error handling)

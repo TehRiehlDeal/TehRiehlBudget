@@ -9,7 +9,6 @@ import { Dashboard } from '@/pages/Dashboard';
 import { Accounts } from '@/pages/Accounts';
 import { Transactions } from '@/pages/Transactions';
 import { Categories } from '@/pages/Categories';
-import { PlaidConnect } from '@/pages/PlaidConnect';
 
 function App() {
   const { initialize } = useAuthStore();
@@ -34,7 +33,6 @@ function App() {
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/categories" element={<Categories />} />
-          <Route path="/plaid" element={<PlaidConnect />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -7,7 +7,6 @@ import {
   Wallet,
   ArrowLeftRight,
   Tags,
-  Landmark,
   LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -17,7 +16,6 @@ const navItems = [
   { to: '/accounts', label: 'Accounts', icon: Wallet },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/categories', label: 'Categories', icon: Tags },
-  { to: '/plaid', label: 'Connected Banks', icon: Landmark },
 ];
 
 export function AppLayout() {

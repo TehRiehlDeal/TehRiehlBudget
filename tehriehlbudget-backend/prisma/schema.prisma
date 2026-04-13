@@ -17,8 +17,6 @@ model User {
   accounts     Account[]
   transactions Transaction[]
   categories   Category[]
-  plaidItems   PlaidItem[]
-
   @@map("users")
 }
 
@@ -35,7 +33,6 @@ model Account {
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
-  plaidAccount PlaidAccount?
 
   @@map("accounts")
 }
@@ -89,37 +86,4 @@ model Category {
 
   @@unique([userId, name])
   @@map("categories")
-}
-
-model PlaidItem {
-  id              String    @id @default(uuid())
-  userId          String    @map("user_id")
-  itemId          String    @unique @map("item_id")
-  accessToken     String    @map("access_token")
-  institutionName String?   @map("institution_name")
-  status          String    @default("connected")
-  lastSync        DateTime? @map("last_sync")
-  syncError       String?   @map("sync_error")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plaidAccounts PlaidAccount[]
-
-  @@map("plaid_items")
-}
-
-model PlaidAccount {
-  id             String   @id @default(uuid())
-  plaidItemId    String   @map("plaid_item_id")
-  accountId      String   @unique @map("account_id")
-  plaidAccountId String   @unique @map("plaid_account_id")
-  syncCursor     String?  @map("sync_cursor")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  plaidItem PlaidItem @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
-  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-
-  @@map("plaid_accounts")
 }
