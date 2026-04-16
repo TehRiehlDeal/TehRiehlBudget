@@ -3,7 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { AdvisorService } from './advisor.service';
 import { AggregationsService } from '../aggregations/aggregations.service';
 
-jest.mock('@prisma/client', () => ({ PrismaClient: class {} }));
+jest.mock('@prisma/client', () => ({
+  PrismaClient: class {},
+  AccountType: {
+    CHECKING: 'CHECKING',
+    SAVINGS: 'SAVINGS',
+    CREDIT: 'CREDIT',
+    LOAN: 'LOAN',
+    STOCK: 'STOCK',
+  },
+  TransactionType: { INCOME: 'INCOME', EXPENSE: 'EXPENSE', TRANSFER: 'TRANSFER' },
+}));
 
 // Mock global fetch for Ollama calls
 const mockFetch = jest.fn();

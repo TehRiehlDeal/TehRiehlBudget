@@ -2,16 +2,27 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AggregationsService } from './aggregations.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-jest.mock('@prisma/client', () => ({ PrismaClient: class {} }));
+jest.mock('@prisma/client', () => ({
+  PrismaClient: class {},
+  AccountType: {
+    CHECKING: 'CHECKING',
+    SAVINGS: 'SAVINGS',
+    CREDIT: 'CREDIT',
+    LOAN: 'LOAN',
+    STOCK: 'STOCK',
+  },
+  TransactionType: { INCOME: 'INCOME', EXPENSE: 'EXPENSE', TRANSFER: 'TRANSFER' },
+}));
 
 describe('AggregationsService', () => {
   let service: AggregationsService;
 
   const userId = 'user-123';
 
-  const mockPrisma = {
+  const mockPrisma: any = {
     account: {
       aggregate: jest.fn(),
+      findFirst: jest.fn(),
     },
     transaction: {
       aggregate: jest.fn(),
@@ -123,6 +134,78 @@ describe('AggregationsService', () => {
       expect(result).toHaveLength(2);
       expect(result[0]).toHaveProperty('name');
       expect(result[0]).toHaveProperty('amount');
+    });
+  });
+
+  describe('getAccountBalanceHistory', () => {
+    it('throws NotFound if the account is not owned by the user', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(null);
+      await expect(
+        service.getAccountBalanceHistory(userId, 'acc-missing'),
+      ).rejects.toThrow();
+    });
+
+    it('reconstructs history for an asset account walking transactions backward', async () => {
+      // Current balance: $1000 on CHECKING.
+      // Transactions (newest first):
+      //   - $50 expense
+      //   - $200 income
+      // So before the income, balance was $800. Before the expense, balance was $1050.
+      mockPrisma.account.findFirst.mockResolvedValue({
+        id: 'acc-1',
+        type: 'CHECKING',
+        balance: 1000,
+      });
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          id: 't2',
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          type: 'EXPENSE',
+          amount: 50,
+          date: new Date('2026-04-10'),
+        },
+        {
+          id: 't1',
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          type: 'INCOME',
+          amount: 200,
+          date: new Date('2026-04-05'),
+        },
+      ]);
+
+      const result = await service.getAccountBalanceHistory(userId, 'acc-1');
+
+      // Returned oldest-first
+      expect(result).toHaveLength(3);
+      expect(result[0].balance).toBe(850); // before the $200 income
+      expect(result[1].balance).toBe(1050); // before the $50 expense
+      expect(result[2].balance).toBe(1000); // current
+    });
+
+    it('treats credit-card expenses as debt increase when walking backwards', async () => {
+      // Current balance (debt): $500 on a CREDIT card.
+      // Transactions: a $100 EXPENSE (charge). Before that the debt was $400.
+      mockPrisma.account.findFirst.mockResolvedValue({
+        id: 'acc-cc',
+        type: 'CREDIT',
+        balance: 500,
+      });
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          accountId: 'acc-cc',
+          destinationAccountId: null,
+          type: 'EXPENSE',
+          amount: 100,
+          date: new Date('2026-04-05'),
+        },
+      ]);
+
+      const result = await service.getAccountBalanceHistory(userId, 'acc-cc');
+      expect(result[0].balance).toBe(400); // before the charge
+      expect(result[result.length - 1].balance).toBe(500);
     });
   });
 });

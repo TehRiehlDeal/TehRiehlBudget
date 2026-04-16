@@ -3,7 +3,17 @@ import { AdvisorController } from './advisor.controller';
 import { AdvisorService } from './advisor.service';
 import { AuthGuard } from '../auth/auth.guard';
 
-jest.mock('@prisma/client', () => ({ PrismaClient: class {} }));
+jest.mock('@prisma/client', () => ({
+  PrismaClient: class {},
+  AccountType: {
+    CHECKING: 'CHECKING',
+    SAVINGS: 'SAVINGS',
+    CREDIT: 'CREDIT',
+    LOAN: 'LOAN',
+    STOCK: 'STOCK',
+  },
+  TransactionType: { INCOME: 'INCOME', EXPENSE: 'EXPENSE', TRANSFER: 'TRANSFER' },
+}));
 
 describe('AdvisorController', () => {
   let controller: AdvisorController;

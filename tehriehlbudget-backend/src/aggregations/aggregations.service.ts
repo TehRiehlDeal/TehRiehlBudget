@@ -1,11 +1,49 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AccountType, TransactionType } from '@prisma/client';
 
 function parseDateRange(startDate?: string, endDate?: string) {
   const now = new Date();
   const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
   const end = endDate ? new Date(endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return { start, end };
+}
+
+const LIABILITY_TYPES: AccountType[] = [AccountType.CREDIT, AccountType.LOAN];
+
+/**
+ * Returns the signed delta that a transaction applies to an account's balance,
+ * using the same asset/liability sign rules as the transfer logic.
+ *
+ *   Asset accounts (positive = money you have):
+ *     INCOME or transfer-in: +
+ *     EXPENSE or transfer-out: -
+ *   Liability accounts (positive = debt owed):
+ *     EXPENSE or transfer-out (new charge/debt): +
+ *     INCOME or transfer-in (payment/refund reducing debt): -
+ */
+function transactionDelta(
+  accountType: AccountType,
+  role: 'primary' | 'destination',
+  transactionType: TransactionType,
+  amount: number,
+): number {
+  const isLiability = LIABILITY_TYPES.includes(accountType);
+
+  let incomingCash: boolean;
+  if (transactionType === TransactionType.INCOME) {
+    incomingCash = true;
+  } else if (transactionType === TransactionType.EXPENSE) {
+    incomingCash = false;
+  } else {
+    // TRANSFER: destination receives, source sends
+    incomingCash = role === 'destination';
+  }
+
+  // For assets, incoming cash increases balance.
+  // For liabilities, incoming cash (a payment) DECREASES the balance (debt down).
+  const positive = isLiability ? !incomingCash : incomingCash;
+  return positive ? amount : -amount;
 }
 
 @Injectable()
@@ -93,6 +131,76 @@ export class AggregationsService {
         amount: Number(g._sum.amount) || 0,
       };
     });
+  }
+
+  /**
+   * Returns a time series of the account's balance, anchored on the current
+   * stored balance. Works backward from "now" through all transactions that
+   * affect this account (either as source or transfer destination), reversing
+   * each delta to reconstruct historical points.
+   */
+  async getAccountBalanceHistory(
+    userId: string,
+    accountId: string,
+    days = 90,
+  ): Promise<{ date: string; balance: number }[]> {
+    const account = await this.prisma.account.findFirst({
+      where: { id: accountId, userId },
+      select: { id: true, type: true, balance: true },
+    });
+    if (!account) {
+      throw new NotFoundException('Account not found');
+    }
+
+    const currentBalance = Number(account.balance);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    // Pull all transactions affecting this account in the window, ordered newest first
+    const txns = await this.prisma.transaction.findMany({
+      where: {
+        userId,
+        OR: [{ accountId }, { destinationAccountId: accountId }],
+        date: { gte: cutoff },
+      },
+      orderBy: { date: 'desc' },
+      select: {
+        id: true,
+        accountId: true,
+        destinationAccountId: true,
+        type: true,
+        amount: true,
+        date: true,
+      },
+    });
+
+    // Walk from current balance back in time, computing balance-before-each-txn
+    const points: { date: string; balance: number }[] = [];
+    points.push({
+      date: new Date().toISOString().split('T')[0],
+      balance: currentBalance,
+    });
+
+    let running = currentBalance;
+    for (const t of txns) {
+      const role: 'primary' | 'destination' =
+        t.accountId === accountId ? 'primary' : 'destination';
+      const delta = transactionDelta(
+        account.type,
+        role,
+        t.type,
+        Number(t.amount),
+      );
+      // Reverse this transaction's effect to get the balance BEFORE it
+      running -= delta;
+      points.push({
+        date: t.date.toISOString().split('T')[0],
+        balance: running,
+      });
+    }
+
+    // Return oldest first for charting
+    return points.reverse();
   }
 
   async getSummary(userId: string, startDate: string, endDate: string) {

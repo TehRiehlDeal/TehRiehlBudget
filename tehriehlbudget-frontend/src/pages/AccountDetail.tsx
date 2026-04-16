@@ -31,6 +31,16 @@ import {
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
+import { api } from '@/lib/api';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 
 function formatCurrency(value: number) {
   const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -54,6 +64,9 @@ export function AccountDetail() {
 
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ date: string; balance: number }[]>([]);
+  const [historyDays, setHistoryDays] = useState(90);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     fetchAccounts();
@@ -63,6 +76,31 @@ export function AccountDetail() {
   useEffect(() => {
     if (id) fetchTransactions({ accountId: id }, 1);
   }, [id, fetchTransactions]);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    api
+      .get<{ date: string; balance: number }[]>(
+        `/aggregations/account-balance-history/${id}?days=${historyDays}`,
+      )
+      .then((data) => {
+        if (!cancelled) setHistory(data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to load balance history', err);
+          setHistory([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, historyDays]);
 
   const handleUpdate = async (data: any) => {
     if (!editing) return;
@@ -108,6 +146,64 @@ export function AccountDetail() {
       ) : (
         <p className="text-sm text-muted-foreground">Loading account...</p>
       )}
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-base">Balance over time</CardTitle>
+          <div className="flex gap-1">
+            {[30, 90, 180, 365].map((d) => (
+              <Button
+                key={d}
+                variant={historyDays === d ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setHistoryDays(d)}
+              >
+                {d}d
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {historyLoading && history.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Loading chart...</p>
+          ) : history.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No balance changes in this window.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={history} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={(v) => {
+                    const d = new Date(v);
+                    return `${d.getMonth() + 1}/${d.getDate()}`;
+                  }}
+                  fontSize={11}
+                />
+                <YAxis
+                  tickFormatter={(v: number) => `$${Math.round(v).toLocaleString()}`}
+                  fontSize={11}
+                  width={70}
+                />
+                <Tooltip
+                  formatter={(value: any) => formatCurrency(Number(value))}
+                  labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="balance"
+                  stroke="var(--color-primary)"
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Transactions</h2>
