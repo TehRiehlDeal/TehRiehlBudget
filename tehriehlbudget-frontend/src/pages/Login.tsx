@@ -7,7 +7,7 @@ export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, loading } = useAuthStore();
+  const { login, loading, stayLoggedIn, setStayLoggedIn } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -43,6 +43,15 @@ export function Login() {
             required
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={stayLoggedIn}
+              onChange={(e) => setStayLoggedIn(e.target.checked)}
+              className="size-4 rounded border-input"
+            />
+            Stay logged in
+          </label>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}
           </Button>

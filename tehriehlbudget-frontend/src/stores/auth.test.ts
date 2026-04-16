@@ -16,6 +16,9 @@ const { mockSupabase } = vi.hoisted(() => ({
 
 vi.mock('@/lib/supabase', () => ({
   supabase: mockSupabase,
+  getStayLoggedIn: vi.fn(() => true),
+  setStayLoggedIn: vi.fn(),
+  STAY_LOGGED_IN_KEY: 'auth:stay_logged_in',
 }));
 
 import { useAuthStore } from './auth';
