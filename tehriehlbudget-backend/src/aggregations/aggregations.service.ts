@@ -13,11 +13,19 @@ export class AggregationsService {
   constructor(private prisma: PrismaService) {}
 
   async getNetWorth(userId: string): Promise<number> {
-    const result = await this.prisma.account.aggregate({
-      where: { userId },
-      _sum: { balance: true },
-    });
-    return Number(result._sum.balance) || 0;
+    const [assets, liabilities] = await Promise.all([
+      this.prisma.account.aggregate({
+        where: { userId, type: { in: ['CHECKING', 'SAVINGS', 'STOCK'] } },
+        _sum: { balance: true },
+      }),
+      this.prisma.account.aggregate({
+        where: { userId, type: { in: ['CREDIT', 'LOAN'] } },
+        _sum: { balance: true },
+      }),
+    ]);
+    const assetsSum = Number(assets._sum.balance) || 0;
+    const liabilitiesSum = Number(liabilities._sum.balance) || 0;
+    return assetsSum - liabilitiesSum;
   }
 
   async getTotalDebt(userId: string): Promise<number> {

@@ -35,36 +35,53 @@ describe('AggregationsService', () => {
 
   describe('getNetWorth', () => {
     it('should sum all account balances', async () => {
-      mockPrisma.account.aggregate.mockResolvedValue({
-        _sum: { balance: 15000.5 },
-      });
+      // First call = assets aggregate, second call = liabilities aggregate
+      mockPrisma.account.aggregate
+        .mockResolvedValueOnce({ _sum: { balance: 15000.5 } })
+        .mockResolvedValueOnce({ _sum: { balance: 2000 } });
 
       const result = await service.getNetWorth(userId);
-      expect(result).toBe(15000.5);
+      expect(result).toBe(13000.5);
       expect(mockPrisma.account.aggregate).toHaveBeenCalledWith({
-        where: { userId },
+        where: { userId, type: { in: ['CHECKING', 'SAVINGS', 'STOCK'] } },
+        _sum: { balance: true },
+      });
+      expect(mockPrisma.account.aggregate).toHaveBeenCalledWith({
+        where: { userId, type: { in: ['CREDIT', 'LOAN'] } },
         _sum: { balance: true },
       });
     });
 
     it('should return 0 when no accounts', async () => {
-      mockPrisma.account.aggregate.mockResolvedValue({
-        _sum: { balance: null },
-      });
+      mockPrisma.account.aggregate
+        .mockResolvedValueOnce({ _sum: { balance: null } })
+        .mockResolvedValueOnce({ _sum: { balance: null } });
 
       const result = await service.getNetWorth(userId);
       expect(result).toBe(0);
+    });
+
+    it('should subtract liabilities from assets', async () => {
+      // $5000 checking + $10000 savings = $15000 assets
+      // $3000 credit card + $500 loan = $3500 liabilities
+      // net worth = 15000 - 3500 = 11500
+      mockPrisma.account.aggregate
+        .mockResolvedValueOnce({ _sum: { balance: 15000 } })
+        .mockResolvedValueOnce({ _sum: { balance: 3500 } });
+
+      const result = await service.getNetWorth(userId);
+      expect(result).toBe(11500);
     });
   });
 
   describe('getTotalDebt', () => {
     it('should sum CREDIT and LOAN balances', async () => {
       mockPrisma.account.aggregate.mockResolvedValue({
-        _sum: { balance: -1500 },
+        _sum: { balance: 1500 },
       });
 
       const result = await service.getTotalDebt(userId);
-      expect(result).toBe(-1500);
+      expect(result).toBe(1500);
     });
   });
 
