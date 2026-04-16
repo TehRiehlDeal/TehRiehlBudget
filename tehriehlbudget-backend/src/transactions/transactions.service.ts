@@ -31,37 +31,40 @@ const LIABILITY_TYPES: AccountType[] = [
 ];
 
 /**
- * Determines how a transfer affects an account's balance.
+ * Returns the signed delta applied to an account's balance by a transaction.
  *
- * Asset accounts (CHECKING, SAVINGS, STOCK): positive balance = you have money
- *   - money flowing OUT (source): balance decreases
- *   - money flowing IN (destination): balance increases
- *
- * Liability accounts (CREDIT, LOAN): positive balance = debt owed
- *   - money flowing OUT (source, e.g., cash advance): balance increases (more debt)
- *   - money flowing IN (destination, e.g., payment): balance decreases (less debt)
+ * Rules:
+ *   Asset accounts (CHECKING, SAVINGS, STOCK):
+ *     INCOME or transfer-in: +amount
+ *     EXPENSE or transfer-out: -amount
+ *   Liability accounts (CREDIT, LOAN):
+ *     EXPENSE or transfer-out (new charge): +amount  (debt grows)
+ *     INCOME or transfer-in (payment/refund): -amount  (debt shrinks)
  */
-function transferDelta(
+function signedDelta(
   accountType: AccountType,
-  role: 'source' | 'destination',
+  role: 'primary' | 'destination',
+  transactionType: TransactionType,
   amount: number,
-): { increment: number } | { decrement: number } {
+): number {
   const isLiability = LIABILITY_TYPES.includes(accountType);
-  const assetIncrements = role === 'destination';
-  const shouldIncrement = isLiability ? !assetIncrements : assetIncrements;
-  return shouldIncrement ? { increment: amount } : { decrement: amount };
+  let incomingCash: boolean;
+  if (transactionType === TransactionType.INCOME) {
+    incomingCash = true;
+  } else if (transactionType === TransactionType.EXPENSE) {
+    incomingCash = false;
+  } else {
+    // TRANSFER: destination receives, primary (source) sends
+    incomingCash = role === 'destination';
+  }
+  const positive = isLiability ? !incomingCash : incomingCash;
+  return positive ? amount : -amount;
 }
 
-/** Returns the reversed delta for undoing a prior transfer. */
-function reverseTransferDelta(
-  accountType: AccountType,
-  role: 'source' | 'destination',
-  amount: number,
+function asPrismaUpdate(
+  delta: number,
 ): { increment: number } | { decrement: number } {
-  const forward = transferDelta(accountType, role, amount);
-  return 'increment' in forward
-    ? { decrement: forward.increment }
-    : { increment: forward.decrement };
+  return delta >= 0 ? { increment: delta } : { decrement: -delta };
 }
 
 @Injectable()
@@ -81,9 +84,7 @@ export class TransactionsService {
       data.notes = this.encryption.encryptField(data.notes)!;
     }
 
-    let sourceAccount: { id: string; type: AccountType } | undefined;
-    let destAccount: { id: string; type: AccountType } | undefined;
-
+    const accountIds = [dto.accountId];
     if (dto.type === TransactionType.TRANSFER) {
       if (!dto.destinationAccountId) {
         throw new BadRequestException(
@@ -95,34 +96,50 @@ export class TransactionsService {
           'Source and destination accounts must differ',
         );
       }
-      const accounts = await this.prisma.account.findMany({
-        where: { userId, id: { in: [dto.accountId, dto.destinationAccountId] } },
-        select: { id: true, type: true },
-      });
-      if (accounts.length !== 2) {
-        throw new NotFoundException('One or both accounts not found');
-      }
-      sourceAccount = accounts.find((a) => a.id === dto.accountId);
-      destAccount = accounts.find((a) => a.id === dto.destinationAccountId);
+      accountIds.push(dto.destinationAccountId);
     } else {
       data.destinationAccountId = null;
     }
+
+    const accounts = await this.prisma.account.findMany({
+      where: { userId, id: { in: accountIds } },
+      select: { id: true, type: true },
+    });
+    if (accounts.length !== accountIds.length) {
+      throw new NotFoundException('One or more accounts not found');
+    }
+    const typeById = new Map(accounts.map((a) => [a.id, a.type]));
 
     const txn = await this.prisma.$transaction(async (tx) => {
       const created = await tx.transaction.create({
         data,
         include: txnInclude,
       });
-      if (sourceAccount && destAccount) {
+
+      // Apply delta to primary account for all transaction types
+      const primaryType = typeById.get(dto.accountId)!;
+      await tx.account.update({
+        where: { id: dto.accountId },
+        data: {
+          balance: asPrismaUpdate(
+            signedDelta(primaryType, 'primary', dto.type, dto.amount),
+          ),
+        },
+      });
+
+      // For transfers, also update destination
+      if (dto.type === TransactionType.TRANSFER && dto.destinationAccountId) {
+        const destType = typeById.get(dto.destinationAccountId)!;
         await tx.account.update({
-          where: { id: sourceAccount.id },
-          data: { balance: transferDelta(sourceAccount.type, 'source', dto.amount) },
-        });
-        await tx.account.update({
-          where: { id: destAccount.id },
-          data: { balance: transferDelta(destAccount.type, 'destination', dto.amount) },
+          where: { id: dto.destinationAccountId },
+          data: {
+            balance: asPrismaUpdate(
+              signedDelta(destType, 'destination', dto.type, dto.amount),
+            ),
+          },
         });
       }
+
       return created;
     });
     return this.decryptTransaction(txn);
@@ -188,28 +205,21 @@ export class TransactionsService {
       data.notes = this.encryption.encryptField(data.notes);
     }
 
-    const wasTransfer = existing.type === TransactionType.TRANSFER;
-    const willBeTransfer =
-      (dto.type ?? existing.type) === TransactionType.TRANSFER;
-
-    const transferAffected =
-      wasTransfer ||
-      willBeTransfer ||
+    // Determine if anything balance-relevant changed
+    const balanceAffected =
       dto.amount !== undefined ||
       dto.accountId !== undefined ||
-      dto.destinationAccountId !== undefined;
+      dto.destinationAccountId !== undefined ||
+      dto.type !== undefined;
 
-    // Pre-fetch account types we may need
-    const accountIdsNeeded = new Set<string>();
-    if (wasTransfer && existing.destinationAccountId) {
-      accountIdsNeeded.add(existing.accountId);
+    // Collect account IDs we may need types for (old + new)
+    const accountIdsNeeded = new Set<string>([existing.accountId]);
+    if (existing.destinationAccountId) {
       accountIdsNeeded.add(existing.destinationAccountId);
     }
-    if (willBeTransfer) {
-      accountIdsNeeded.add(dto.accountId ?? existing.accountId);
-      const destId = dto.destinationAccountId ?? existing.destinationAccountId;
-      if (destId) accountIdsNeeded.add(destId);
-    }
+    if (dto.accountId) accountIdsNeeded.add(dto.accountId);
+    if (dto.destinationAccountId) accountIdsNeeded.add(dto.destinationAccountId);
+
     const accounts = accountIdsNeeded.size
       ? await this.prisma.account.findMany({
           where: { userId, id: { in: Array.from(accountIdsNeeded) } },
@@ -219,32 +229,69 @@ export class TransactionsService {
     const typeById = new Map(accounts.map((a) => [a.id, a.type]));
 
     const txn = await this.prisma.$transaction(async (tx) => {
-      // Reverse the old transfer effect if this was a transfer
-      if (wasTransfer && existing.destinationAccountId && transferAffected) {
-        const oldSrcType = typeById.get(existing.accountId);
-        const oldDstType = typeById.get(existing.destinationAccountId);
-        if (oldSrcType && oldDstType) {
+      // Reverse the old transaction's effect on balances
+      if (balanceAffected) {
+        const oldPrimaryType = typeById.get(existing.accountId);
+        if (oldPrimaryType) {
           await tx.account.update({
             where: { id: existing.accountId },
             data: {
-              balance: reverseTransferDelta(
-                oldSrcType,
-                'source',
-                Number(existing.amount),
-              ),
-            },
-          });
-          await tx.account.update({
-            where: { id: existing.destinationAccountId },
-            data: {
-              balance: reverseTransferDelta(
-                oldDstType,
-                'destination',
-                Number(existing.amount),
+              balance: asPrismaUpdate(
+                -signedDelta(
+                  oldPrimaryType,
+                  'primary',
+                  existing.type,
+                  Number(existing.amount),
+                ),
               ),
             },
           });
         }
+        if (
+          existing.type === TransactionType.TRANSFER &&
+          existing.destinationAccountId
+        ) {
+          const oldDestType = typeById.get(existing.destinationAccountId);
+          if (oldDestType) {
+            await tx.account.update({
+              where: { id: existing.destinationAccountId },
+              data: {
+                balance: asPrismaUpdate(
+                  -signedDelta(
+                    oldDestType,
+                    'destination',
+                    existing.type,
+                    Number(existing.amount),
+                  ),
+                ),
+              },
+            });
+          }
+        }
+      }
+
+      // Validate transfer constraints on the NEW state
+      const newType = (dto.type ?? existing.type) as TransactionType;
+      const newAccountId = dto.accountId ?? existing.accountId;
+      const newDestId =
+        dto.destinationAccountId !== undefined
+          ? dto.destinationAccountId
+          : existing.destinationAccountId;
+
+      if (newType === TransactionType.TRANSFER) {
+        if (!newDestId) {
+          throw new BadRequestException(
+            'destinationAccountId is required for TRANSFER transactions',
+          );
+        }
+        if (newDestId === newAccountId) {
+          throw new BadRequestException(
+            'Source and destination accounts must differ',
+          );
+        }
+      } else if (data.destinationAccountId === undefined) {
+        // Clear dest if switching away from transfer
+        data.destinationAccountId = null;
       }
 
       const updated = await tx.transaction.update({
@@ -253,30 +300,44 @@ export class TransactionsService {
         include: txnInclude,
       });
 
-      if (willBeTransfer && updated.destinationAccountId && transferAffected) {
-        const newSrcType = typeById.get(updated.accountId);
-        const newDstType = typeById.get(updated.destinationAccountId);
-        if (newSrcType && newDstType) {
+      // Apply the new transaction's effect
+      if (balanceAffected) {
+        const newPrimaryType = typeById.get(updated.accountId);
+        if (newPrimaryType) {
           await tx.account.update({
             where: { id: updated.accountId },
             data: {
-              balance: transferDelta(
-                newSrcType,
-                'source',
-                Number(updated.amount),
+              balance: asPrismaUpdate(
+                signedDelta(
+                  newPrimaryType,
+                  'primary',
+                  updated.type,
+                  Number(updated.amount),
+                ),
               ),
             },
           });
-          await tx.account.update({
-            where: { id: updated.destinationAccountId },
-            data: {
-              balance: transferDelta(
-                newDstType,
-                'destination',
-                Number(updated.amount),
-              ),
-            },
-          });
+        }
+        if (
+          updated.type === TransactionType.TRANSFER &&
+          updated.destinationAccountId
+        ) {
+          const newDestType = typeById.get(updated.destinationAccountId);
+          if (newDestType) {
+            await tx.account.update({
+              where: { id: updated.destinationAccountId },
+              data: {
+                balance: asPrismaUpdate(
+                  signedDelta(
+                    newDestType,
+                    'destination',
+                    updated.type,
+                    Number(updated.amount),
+                  ),
+                ),
+              },
+            });
+          }
         }
       }
 
@@ -294,44 +355,60 @@ export class TransactionsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const accounts = await tx.account.findMany({
+        where: {
+          userId,
+          id: {
+            in: [
+              existing.accountId,
+              ...(existing.destinationAccountId ? [existing.destinationAccountId] : []),
+            ],
+          },
+        },
+        select: { id: true, type: true },
+      });
+      const typeById = new Map(accounts.map((a) => [a.id, a.type]));
+
+      // Reverse the primary account's effect
+      const primaryType = typeById.get(existing.accountId);
+      if (primaryType) {
+        await tx.account.update({
+          where: { id: existing.accountId },
+          data: {
+            balance: asPrismaUpdate(
+              -signedDelta(
+                primaryType,
+                'primary',
+                existing.type,
+                Number(existing.amount),
+              ),
+            ),
+          },
+        });
+      }
+      // For transfers, also reverse the destination
       if (
         existing.type === TransactionType.TRANSFER &&
         existing.destinationAccountId
       ) {
-        const accounts = await tx.account.findMany({
-          where: {
-            userId,
-            id: { in: [existing.accountId, existing.destinationAccountId] },
-          },
-          select: { id: true, type: true },
-        });
-        const srcType = accounts.find((a) => a.id === existing.accountId)?.type;
-        const dstType = accounts.find(
-          (a) => a.id === existing.destinationAccountId,
-        )?.type;
-        if (srcType && dstType) {
-          await tx.account.update({
-            where: { id: existing.accountId },
-            data: {
-              balance: reverseTransferDelta(
-                srcType,
-                'source',
-                Number(existing.amount),
-              ),
-            },
-          });
+        const destType = typeById.get(existing.destinationAccountId);
+        if (destType) {
           await tx.account.update({
             where: { id: existing.destinationAccountId },
             data: {
-              balance: reverseTransferDelta(
-                dstType,
-                'destination',
-                Number(existing.amount),
+              balance: asPrismaUpdate(
+                -signedDelta(
+                  destType,
+                  'destination',
+                  existing.type,
+                  Number(existing.amount),
+                ),
               ),
             },
           });
         }
       }
+
       return tx.transaction.delete({ where: { id } });
     });
   }
