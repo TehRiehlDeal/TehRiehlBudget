@@ -1,9 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { TransactionType } from '@prisma/client';
+import { TransactionType, Prisma } from '@prisma/client';
 
 export interface TransactionFilters {
   accountId?: string;
@@ -15,6 +19,12 @@ export interface TransactionFilters {
   limit?: number;
 }
 
+const txnInclude = {
+  category: true,
+  account: true,
+  destinationAccount: true,
+} as const;
+
 @Injectable()
 export class TransactionsService {
   constructor(
@@ -23,13 +33,53 @@ export class TransactionsService {
   ) {}
 
   async create(userId: string, dto: CreateTransactionDto) {
-    const data: any = { userId, ...dto, date: new Date(dto.date) };
+    const data: any = {
+      userId,
+      ...dto,
+      date: new Date(dto.date),
+    };
     if (data.notes) {
       data.notes = this.encryption.encryptField(data.notes)!;
     }
-    const txn = await this.prisma.transaction.create({
-      data,
-      include: { category: true, account: true },
+
+    if (dto.type === TransactionType.TRANSFER) {
+      if (!dto.destinationAccountId) {
+        throw new BadRequestException(
+          'destinationAccountId is required for TRANSFER transactions',
+        );
+      }
+      if (dto.destinationAccountId === dto.accountId) {
+        throw new BadRequestException(
+          'Source and destination accounts must differ',
+        );
+      }
+      // Validate both accounts belong to the user
+      const accounts = await this.prisma.account.findMany({
+        where: { userId, id: { in: [dto.accountId, dto.destinationAccountId] } },
+      });
+      if (accounts.length !== 2) {
+        throw new NotFoundException('One or both accounts not found');
+      }
+    } else {
+      data.destinationAccountId = null;
+    }
+
+    const txn = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.transaction.create({
+        data,
+        include: txnInclude,
+      });
+      if (dto.type === TransactionType.TRANSFER && dto.destinationAccountId) {
+        await tx.account.update({
+          where: { id: dto.accountId },
+          data: { balance: { decrement: dto.amount } },
+        });
+        await tx.account.update({
+          where: { id: dto.destinationAccountId },
+          data: { balance: { increment: dto.amount } },
+        });
+      }
+      return created;
     });
     return this.decryptTransaction(txn);
   }
@@ -39,21 +89,27 @@ export class TransactionsService {
     const page = Number(filters.page) || 1;
     const limit = Number(filters.limit) || 20;
 
-    const where: any = { userId };
+    const where: Prisma.TransactionWhereInput = { userId };
 
-    if (accountId) where.accountId = accountId;
+    if (accountId) {
+      // Include transfers where the account is either source or destination
+      where.OR = [
+        { accountId },
+        { destinationAccountId: accountId },
+      ];
+    }
     if (categoryId) where.categoryId = categoryId;
     if (type) where.type = type;
     if (startDate || endDate) {
       where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
+      if (startDate) (where.date as any).gte = new Date(startDate);
+      if (endDate) (where.date as any).lte = new Date(endDate);
     }
 
     const [data, total] = await Promise.all([
       this.prisma.transaction.findMany({
         where,
-        include: { category: true, account: true },
+        include: txnInclude,
         orderBy: { date: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -67,7 +123,7 @@ export class TransactionsService {
   async findOne(userId: string, id: string) {
     const transaction = await this.prisma.transaction.findFirst({
       where: { id, userId },
-      include: { category: true, account: true },
+      include: txnInclude,
     });
     if (!transaction) {
       throw new NotFoundException('Transaction not found');
@@ -76,23 +132,92 @@ export class TransactionsService {
   }
 
   async update(userId: string, id: string, dto: UpdateTransactionDto) {
-    await this.findOne(userId, id);
+    const existing = await this.prisma.transaction.findFirst({
+      where: { id, userId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Transaction not found');
+    }
+
     const data: any = { ...dto };
     if (dto.date) data.date = new Date(dto.date);
     if (data.notes !== undefined) {
       data.notes = this.encryption.encryptField(data.notes);
     }
-    const txn = await this.prisma.transaction.update({
-      where: { id },
-      data,
-      include: { category: true, account: true },
+
+    const wasTransfer = existing.type === TransactionType.TRANSFER;
+    const willBeTransfer =
+      (dto.type ?? existing.type) === TransactionType.TRANSFER;
+
+    // If transfer-related fields are unchanged, skip balance recalc
+    const transferAffected =
+      wasTransfer ||
+      willBeTransfer ||
+      dto.amount !== undefined ||
+      dto.accountId !== undefined ||
+      dto.destinationAccountId !== undefined;
+
+    const txn = await this.prisma.$transaction(async (tx) => {
+      // Reverse the old transfer effect if this was a transfer
+      if (wasTransfer && existing.destinationAccountId && transferAffected) {
+        await tx.account.update({
+          where: { id: existing.accountId },
+          data: { balance: { increment: existing.amount } },
+        });
+        await tx.account.update({
+          where: { id: existing.destinationAccountId },
+          data: { balance: { decrement: existing.amount } },
+        });
+      }
+
+      const updated = await tx.transaction.update({
+        where: { id },
+        data,
+        include: txnInclude,
+      });
+
+      // Apply the new transfer effect if it will be a transfer
+      if (willBeTransfer && updated.destinationAccountId && transferAffected) {
+        await tx.account.update({
+          where: { id: updated.accountId },
+          data: { balance: { decrement: updated.amount } },
+        });
+        await tx.account.update({
+          where: { id: updated.destinationAccountId },
+          data: { balance: { increment: updated.amount } },
+        });
+      }
+
+      return updated;
     });
     return this.decryptTransaction(txn);
   }
 
   async remove(userId: string, id: string) {
-    await this.findOne(userId, id);
-    return this.prisma.transaction.delete({ where: { id } });
+    const existing = await this.prisma.transaction.findFirst({
+      where: { id, userId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Reverse the transfer balance effect on delete
+      if (
+        existing.type === TransactionType.TRANSFER &&
+        existing.destinationAccountId
+      ) {
+        await tx.account.update({
+          where: { id: existing.accountId },
+          data: { balance: { increment: existing.amount } },
+        });
+        await tx.account.update({
+          where: { id: existing.destinationAccountId },
+          data: { balance: { decrement: existing.amount } },
+        });
+      }
+      return tx.transaction.delete({ where: { id } });
+    });
   }
 
   private decryptTransaction<T extends { notes?: string | null }>(txn: T): T {

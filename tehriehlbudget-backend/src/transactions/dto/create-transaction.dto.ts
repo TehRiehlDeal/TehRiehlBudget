@@ -15,6 +15,10 @@ export class CreateTransactionDto {
 
   @IsUUID()
   @IsOptional()
+  destinationAccountId?: string;
+
+  @IsUUID()
+  @IsOptional()
   categoryId?: string;
 
   @IsNumber()

@@ -27,7 +27,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, ChevronLeft, ChevronRight, Trash2, Paperclip } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Trash2, Paperclip, ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
@@ -50,6 +50,7 @@ export function Transactions() {
 
   // Form state
   const [accountId, setAccountId] = useState('');
+  const [destinationAccountId, setDestinationAccountId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<string>('EXPENSE');
@@ -57,6 +58,8 @@ export function Transactions() {
   const [notes, setNotes] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+
+  const isTransfer = type === 'TRANSFER';
 
   useEffect(() => {
     fetchAccounts();
@@ -87,7 +90,8 @@ export function Transactions() {
 
     await createTransaction({
       accountId,
-      categoryId: categoryId || undefined,
+      destinationAccountId: isTransfer ? destinationAccountId : undefined,
+      categoryId: isTransfer ? undefined : categoryId || undefined,
       amount: parseFloat(amount),
       type: type as any,
       description,
@@ -102,6 +106,7 @@ export function Transactions() {
 
   const resetForm = () => {
     setAccountId('');
+    setDestinationAccountId('');
     setCategoryId('');
     setAmount('');
     setType('EXPENSE');
@@ -124,14 +129,6 @@ export function Transactions() {
           <DialogContent>
             <DialogHeader><DialogTitle>New Transaction</DialogTitle></DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
-              <Select value={accountId} onValueChange={(v) => setAccountId(v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <Select value={type} onValueChange={(v) => setType(v ?? 'EXPENSE')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -140,16 +137,44 @@ export function Transactions() {
                   ))}
                 </SelectContent>
               </Select>
+              <div className="space-y-1">
+                {isTransfer && <label className="text-xs text-muted-foreground">From account</label>}
+                <Select value={accountId} onValueChange={(v) => setAccountId(v ?? '')}>
+                  <SelectTrigger><SelectValue placeholder={isTransfer ? 'From account' : 'Select account'} /></SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {isTransfer && (
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">To account</label>
+                  <Select value={destinationAccountId} onValueChange={(v) => setDestinationAccountId(v ?? '')}>
+                    <SelectTrigger><SelectValue placeholder="To account" /></SelectTrigger>
+                    <SelectContent>
+                      {accounts
+                        .filter((a) => a.id !== accountId)
+                        .map((a) => (
+                          <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Input type="number" step="0.01" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} required />
               <Input placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} required />
-              <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Category (optional)" /></SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!isTransfer && (
+                <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
+                  <SelectTrigger><SelectValue placeholder="Category (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
               <Input placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
               <div className="flex items-center gap-2">
@@ -164,7 +189,9 @@ export function Transactions() {
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={!accountId}>Create</Button>
+                <Button type="submit" disabled={!accountId || (isTransfer && !destinationAccountId)}>
+                  Create
+                </Button>
               </div>
             </form>
           </DialogContent>
@@ -234,7 +261,17 @@ export function Transactions() {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm">{txn.account?.name}</TableCell>
+                  <TableCell className="text-sm">
+                    {txn.type === 'TRANSFER' && txn.destinationAccount ? (
+                      <span className="inline-flex items-center gap-1">
+                        {txn.account?.name}
+                        <ArrowRight className="size-3 text-muted-foreground" />
+                        {txn.destinationAccount.name}
+                      </span>
+                    ) : (
+                      txn.account?.name
+                    )}
+                  </TableCell>
                   <TableCell className="text-right text-sm font-medium">
                     ${Number(txn.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </TableCell>

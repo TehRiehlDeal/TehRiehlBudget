@@ -32,8 +32,9 @@ model Account {
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions           Transaction[] @relation("AccountTransactions")
+  incomingTransfers      Transaction[] @relation("DestinationAccountTransactions")
 
   @@map("accounts")
 }
@@ -47,22 +48,24 @@ enum AccountType {
 }
 
 model Transaction {
-  id          String          @id @default(uuid())
-  userId      String          @map("user_id")
-  accountId   String          @map("account_id")
-  categoryId  String?         @map("category_id")
-  amount      Decimal         @db.Decimal(12, 2)
-  type        TransactionType
-  description String
-  notes       String?
-  date        DateTime
-  receiptPath String?         @map("receipt_path")
-  createdAt   DateTime        @default(now()) @map("created_at")
-  updatedAt   DateTime        @updatedAt @map("updated_at")
+  id                   String          @id @default(uuid())
+  userId               String          @map("user_id")
+  accountId            String          @map("account_id")
+  destinationAccountId String?         @map("destination_account_id")
+  categoryId           String?         @map("category_id")
+  amount               Decimal         @db.Decimal(12, 2)
+  type                 TransactionType
+  description          String
+  notes                String?
+  date                 DateTime
+  receiptPath          String?         @map("receipt_path")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account            Account   @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: Cascade)
+  destinationAccount Account?  @relation("DestinationAccountTransactions", fields: [destinationAccountId], references: [id], onDelete: Cascade)
+  category           Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   @@map("transactions")
 }

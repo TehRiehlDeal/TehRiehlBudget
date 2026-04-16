@@ -5,6 +5,7 @@ export interface Transaction {
   id: string;
   userId: string;
   accountId: string;
+  destinationAccountId?: string | null;
   categoryId?: string;
   amount: number;
   type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
@@ -14,6 +15,7 @@ export interface Transaction {
   receiptPath?: string;
   category?: { id: string; name: string; color?: string };
   account?: { id: string; name: string; type: string };
+  destinationAccount?: { id: string; name: string; type: string } | null;
   createdAt: string;
   updatedAt: string;
 }
