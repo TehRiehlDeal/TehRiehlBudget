@@ -7,6 +7,14 @@ import { TransactionType } from '@prisma/client';
 jest.mock('@prisma/client', () => ({
   PrismaClient: class {},
   TransactionType: { INCOME: 'INCOME', EXPENSE: 'EXPENSE', TRANSFER: 'TRANSFER' },
+  AccountType: {
+    CHECKING: 'CHECKING',
+    SAVINGS: 'SAVINGS',
+    CREDIT: 'CREDIT',
+    LOAN: 'LOAN',
+    STOCK: 'STOCK',
+  },
+  Prisma: {},
 }));
 
 describe('TransactionsController', () => {

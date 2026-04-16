@@ -3,11 +3,18 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
-import { TransactionType } from '@prisma/client';
+import { TransactionType, AccountType } from '@prisma/client';
 
 jest.mock('@prisma/client', () => ({
   PrismaClient: class {},
   TransactionType: { INCOME: 'INCOME', EXPENSE: 'EXPENSE', TRANSFER: 'TRANSFER' },
+  AccountType: {
+    CHECKING: 'CHECKING',
+    SAVINGS: 'SAVINGS',
+    CREDIT: 'CREDIT',
+    LOAN: 'LOAN',
+    STOCK: 'STOCK',
+  },
   Prisma: {},
 }));
 
@@ -39,6 +46,7 @@ describe('TransactionsService', () => {
     },
     account: {
       update: jest.fn(),
+      findMany: jest.fn(),
     },
   });
 
@@ -122,7 +130,7 @@ describe('TransactionsService', () => {
     });
 
     it('should reject transfer if either account is not owned by user', async () => {
-      mockPrisma.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
+      mockPrisma.account.findMany.mockResolvedValue([{ id: 'acc-1', type: AccountType.CHECKING }]);
       const dto = {
         accountId: 'acc-1',
         destinationAccountId: 'acc-2',
@@ -134,31 +142,28 @@ describe('TransactionsService', () => {
       await expect(service.create(userId, dto)).rejects.toThrow(NotFoundException);
     });
 
-    it('should create a TRANSFER and atomically update both account balances', async () => {
+    it('should transfer between two asset accounts (checking → savings): decrement source, increment destination', async () => {
       mockPrisma.account.findMany.mockResolvedValue([
-        { id: 'acc-1' },
-        { id: 'acc-2' },
+        { id: 'acc-1', type: AccountType.CHECKING },
+        { id: 'acc-2', type: AccountType.SAVINGS },
       ]);
-      const transferTxn = {
+      txClient.transaction.create.mockResolvedValue({
         ...mockTransaction,
         accountId: 'acc-1',
         destinationAccountId: 'acc-2',
         amount: 500,
         type: TransactionType.TRANSFER,
-      };
-      txClient.transaction.create.mockResolvedValue(transferTxn);
+      });
 
-      const dto = {
+      await service.create(userId, {
         accountId: 'acc-1',
         destinationAccountId: 'acc-2',
         amount: 500,
         type: TransactionType.TRANSFER,
-        description: 'Credit card payment',
+        description: 'Move to savings',
         date: '2026-04-05',
-      };
-      const result = await service.create(userId, dto);
+      });
 
-      expect(txClient.transaction.create).toHaveBeenCalled();
       expect(txClient.account.update).toHaveBeenCalledWith({
         where: { id: 'acc-1' },
         data: { balance: { decrement: 500 } },
@@ -167,7 +172,98 @@ describe('TransactionsService', () => {
         where: { id: 'acc-2' },
         data: { balance: { increment: 500 } },
       });
-      expect(result.type).toBe(TransactionType.TRANSFER);
+    });
+
+    it('should pay down a credit card (checking → credit): decrement source, DECREMENT liability destination', async () => {
+      mockPrisma.account.findMany.mockResolvedValue([
+        { id: 'acc-1', type: AccountType.CHECKING },
+        { id: 'acc-cc', type: AccountType.CREDIT },
+      ]);
+      txClient.transaction.create.mockResolvedValue({
+        ...mockTransaction,
+        accountId: 'acc-1',
+        destinationAccountId: 'acc-cc',
+        amount: 500,
+        type: TransactionType.TRANSFER,
+      });
+
+      await service.create(userId, {
+        accountId: 'acc-1',
+        destinationAccountId: 'acc-cc',
+        amount: 500,
+        type: TransactionType.TRANSFER,
+        description: 'Credit card payment',
+        date: '2026-04-05',
+      });
+
+      expect(txClient.account.update).toHaveBeenCalledWith({
+        where: { id: 'acc-1' },
+        data: { balance: { decrement: 500 } },
+      });
+      expect(txClient.account.update).toHaveBeenCalledWith({
+        where: { id: 'acc-cc' },
+        data: { balance: { decrement: 500 } },
+      });
+    });
+
+    it('should pay down a loan (savings → loan): decrement source, DECREMENT liability destination', async () => {
+      mockPrisma.account.findMany.mockResolvedValue([
+        { id: 'acc-1', type: AccountType.SAVINGS },
+        { id: 'acc-loan', type: AccountType.LOAN },
+      ]);
+      txClient.transaction.create.mockResolvedValue({
+        ...mockTransaction,
+        accountId: 'acc-1',
+        destinationAccountId: 'acc-loan',
+        amount: 300,
+        type: TransactionType.TRANSFER,
+      });
+
+      await service.create(userId, {
+        accountId: 'acc-1',
+        destinationAccountId: 'acc-loan',
+        amount: 300,
+        type: TransactionType.TRANSFER,
+        description: 'Loan payment',
+        date: '2026-04-05',
+      });
+
+      expect(txClient.account.update).toHaveBeenCalledWith({
+        where: { id: 'acc-loan' },
+        data: { balance: { decrement: 300 } },
+      });
+    });
+
+    it('should handle cash advance (credit → checking): INCREMENT liability source, increment asset destination', async () => {
+      mockPrisma.account.findMany.mockResolvedValue([
+        { id: 'acc-cc', type: AccountType.CREDIT },
+        { id: 'acc-1', type: AccountType.CHECKING },
+      ]);
+      txClient.transaction.create.mockResolvedValue({
+        ...mockTransaction,
+        accountId: 'acc-cc',
+        destinationAccountId: 'acc-1',
+        amount: 200,
+        type: TransactionType.TRANSFER,
+      });
+
+      await service.create(userId, {
+        accountId: 'acc-cc',
+        destinationAccountId: 'acc-1',
+        amount: 200,
+        type: TransactionType.TRANSFER,
+        description: 'Cash advance',
+        date: '2026-04-05',
+      });
+
+      expect(txClient.account.update).toHaveBeenCalledWith({
+        where: { id: 'acc-cc' },
+        data: { balance: { increment: 200 } },
+      });
+      expect(txClient.account.update).toHaveBeenCalledWith({
+        where: { id: 'acc-1' },
+        data: { balance: { increment: 200 } },
+      });
     });
   });
 
@@ -239,39 +335,40 @@ describe('TransactionsService', () => {
       expect(txClient.account.update).not.toHaveBeenCalled();
     });
 
-    it('should reverse old and apply new balances when editing a transfer amount', async () => {
+    it('should correctly reverse and reapply balances when editing a credit-card-payment transfer amount', async () => {
       const existing = {
         ...mockTransaction,
         accountId: 'acc-1',
-        destinationAccountId: 'acc-2',
+        destinationAccountId: 'acc-cc',
         amount: 100,
         type: TransactionType.TRANSFER,
       };
       mockPrisma.transaction.findFirst.mockResolvedValue(existing);
-      txClient.transaction.update.mockResolvedValue({
-        ...existing,
-        amount: 150,
-      });
+      mockPrisma.account.findMany.mockResolvedValue([
+        { id: 'acc-1', type: AccountType.CHECKING },
+        { id: 'acc-cc', type: AccountType.CREDIT },
+      ]);
+      txClient.transaction.update.mockResolvedValue({ ...existing, amount: 150 });
 
       await service.update(userId, 'txn-1', { amount: 150 });
 
-      // Old effect reversed
+      // Reverse original: checking +100, credit +100
       expect(txClient.account.update).toHaveBeenCalledWith({
         where: { id: 'acc-1' },
         data: { balance: { increment: 100 } },
       });
       expect(txClient.account.update).toHaveBeenCalledWith({
-        where: { id: 'acc-2' },
-        data: { balance: { decrement: 100 } },
+        where: { id: 'acc-cc' },
+        data: { balance: { increment: 100 } },
       });
-      // New effect applied
+      // Apply new: checking -150, credit -150
       expect(txClient.account.update).toHaveBeenCalledWith({
         where: { id: 'acc-1' },
         data: { balance: { decrement: 150 } },
       });
       expect(txClient.account.update).toHaveBeenCalledWith({
-        where: { id: 'acc-2' },
-        data: { balance: { increment: 150 } },
+        where: { id: 'acc-cc' },
+        data: { balance: { decrement: 150 } },
       });
     });
   });
@@ -284,15 +381,19 @@ describe('TransactionsService', () => {
       expect(txClient.account.update).not.toHaveBeenCalled();
     });
 
-    it('should reverse the transfer balance effect when deleting a transfer', async () => {
+    it('should reverse a credit-card-payment transfer: checking +, credit +', async () => {
       const transferTxn = {
         ...mockTransaction,
         accountId: 'acc-1',
-        destinationAccountId: 'acc-2',
+        destinationAccountId: 'acc-cc',
         amount: 200,
         type: TransactionType.TRANSFER,
       };
       mockPrisma.transaction.findFirst.mockResolvedValue(transferTxn);
+      txClient.account.findMany.mockResolvedValue([
+        { id: 'acc-1', type: AccountType.CHECKING },
+        { id: 'acc-cc', type: AccountType.CREDIT },
+      ]);
       txClient.transaction.delete.mockResolvedValue(transferTxn);
 
       await service.remove(userId, 'txn-1');
@@ -302,8 +403,8 @@ describe('TransactionsService', () => {
         data: { balance: { increment: 200 } },
       });
       expect(txClient.account.update).toHaveBeenCalledWith({
-        where: { id: 'acc-2' },
-        data: { balance: { decrement: 200 } },
+        where: { id: 'acc-cc' },
+        data: { balance: { increment: 200 } },
       });
     });
 
