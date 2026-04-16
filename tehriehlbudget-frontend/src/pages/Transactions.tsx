@@ -118,6 +118,12 @@ export function Transactions() {
 
   const totalPages = Math.ceil(total / 20);
 
+  const accountName = (id: string | null | undefined) =>
+    id ? accounts.find((a) => a.id === id)?.name ?? '' : '';
+  const categoryName = (id: string | null | undefined) =>
+    id ? categories.find((c) => c.id === id)?.name ?? '' : '';
+  const typeLabel = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -130,17 +136,23 @@ export function Transactions() {
             <DialogHeader><DialogTitle>New Transaction</DialogTitle></DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
               <Select value={type} onValueChange={(v) => setType(v ?? 'EXPENSE')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue>{(v: any) => typeLabel(String(v ?? 'EXPENSE'))}</SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {TRANSACTION_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</SelectItem>
+                    <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <div className="space-y-1">
                 {isTransfer && <label className="text-xs text-muted-foreground">From account</label>}
                 <Select value={accountId} onValueChange={(v) => setAccountId(v ?? '')}>
-                  <SelectTrigger><SelectValue placeholder={isTransfer ? 'From account' : 'Select account'} /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder={isTransfer ? 'From account' : 'Select account'}>
+                      {(v: any) => accountName(v) || (isTransfer ? 'From account' : 'Select account')}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {accounts.map((a) => (
                       <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
@@ -152,7 +164,11 @@ export function Transactions() {
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">To account</label>
                   <Select value={destinationAccountId} onValueChange={(v) => setDestinationAccountId(v ?? '')}>
-                    <SelectTrigger><SelectValue placeholder="To account" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="To account">
+                        {(v: any) => accountName(v) || 'To account'}
+                      </SelectValue>
+                    </SelectTrigger>
                     <SelectContent>
                       {accounts
                         .filter((a) => a.id !== accountId)
@@ -167,7 +183,11 @@ export function Transactions() {
               <Input placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} required />
               {!isTransfer && (
                 <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
-                  <SelectTrigger><SelectValue placeholder="Category (optional)" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Category (optional)">
+                      {(v: any) => categoryName(v) || 'Category (optional)'}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {categories.map((c) => (
                       <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
@@ -204,7 +224,11 @@ export function Transactions() {
           value={filters.accountId || 'all'}
           onValueChange={(v) => setFilters((f) => ({ ...f, accountId: v === 'all' || v === null ? undefined : v }))}
         >
-          <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All accounts" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[180px]">
+            <SelectValue placeholder="All accounts">
+              {(v: any) => (v === 'all' ? 'All accounts' : accountName(v) || 'All accounts')}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All accounts</SelectItem>
             {accounts.map((a) => (
@@ -217,11 +241,15 @@ export function Transactions() {
           value={filters.type || 'all'}
           onValueChange={(v) => setFilters((f) => ({ ...f, type: v === 'all' || v === null ? undefined : v }))}
         >
-          <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="All types" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[150px]">
+            <SelectValue placeholder="All types">
+              {(v: any) => (v === 'all' ? 'All types' : typeLabel(String(v)))}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
             {TRANSACTION_TYPES.map((t) => (
-              <SelectItem key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</SelectItem>
+              <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
             ))}
           </SelectContent>
         </Select>

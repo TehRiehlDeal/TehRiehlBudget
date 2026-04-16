@@ -48,7 +48,14 @@ function AccountForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <Input placeholder="Account name" value={name} onChange={(e) => setName(e.target.value)} required />
       <Select value={type} onValueChange={(v) => setType(v as Account['type'])}>
-        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectTrigger>
+          <SelectValue>
+            {(v: any) => {
+              const t = String(v ?? 'CHECKING');
+              return t.charAt(0) + t.slice(1).toLowerCase();
+            }}
+          </SelectValue>
+        </SelectTrigger>
         <SelectContent>
           {ACCOUNT_TYPES.map((t) => (
             <SelectItem key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</SelectItem>
