@@ -41,7 +41,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
-import { openReceipt } from '@/lib/receipts';
+import { ReceiptViewer } from '@/components/ReceiptViewer';
 
 const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
 
@@ -63,6 +63,7 @@ export function Transactions() {
   const [filters, setFilters] = useState<TransactionFilters>({});
   const [createOpen, setCreateOpen] = useState(searchParams.get('new') === '1');
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {
@@ -212,7 +213,7 @@ export function Transactions() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => openReceipt(txn.receiptPath!)}
+                          onClick={() => setViewingReceipt(txn.receiptPath!)}
                           aria-label="View receipt"
                           title="View receipt"
                         >
@@ -277,6 +278,11 @@ export function Transactions() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ReceiptViewer
+        receiptPath={viewingReceipt}
+        onClose={() => setViewingReceipt(null)}
+      />
     </div>
   );
 }

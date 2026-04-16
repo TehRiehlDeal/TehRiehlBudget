@@ -30,7 +30,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
-import { openReceipt } from '@/lib/receipts';
+import { ReceiptViewer } from '@/components/ReceiptViewer';
 
 function formatCurrency(value: number) {
   const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -53,6 +53,7 @@ export function AccountDetail() {
   } = useTransactionsStore();
 
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAccounts();
@@ -174,7 +175,7 @@ export function AccountDetail() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => openReceipt(txn.receiptPath!)}
+                          onClick={() => setViewingReceipt(txn.receiptPath!)}
                           aria-label="View receipt"
                           title="View receipt"
                         >
@@ -238,6 +239,11 @@ export function AccountDetail() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ReceiptViewer
+        receiptPath={viewingReceipt}
+        onClose={() => setViewingReceipt(null)}
+      />
     </div>
   );
 }
