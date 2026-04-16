@@ -11,6 +11,7 @@ import { Accounts } from '@/pages/Accounts';
 import { AccountDetail } from '@/pages/AccountDetail';
 import { Transactions } from '@/pages/Transactions';
 import { Categories } from '@/pages/Categories';
+import { PWAUpdatePrompt } from '@/components/PWAUpdatePrompt';
 
 function App() {
   const { initialize } = useAuthStore();
@@ -23,6 +24,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <PWAUpdatePrompt />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />

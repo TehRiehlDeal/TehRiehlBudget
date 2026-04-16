@@ -37,6 +37,14 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
+vi.mock('virtual:pwa-register/react', () => ({
+  useRegisterSW: () => ({
+    needRefresh: [false, vi.fn()],
+    offlineReady: [false, vi.fn()],
+    updateServiceWorker: vi.fn(),
+  }),
+}));
+
 import App from './App';
 
 describe('App', () => {
