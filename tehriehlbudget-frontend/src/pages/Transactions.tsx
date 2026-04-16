@@ -197,15 +197,22 @@ export function Transactions() {
               )}
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
               <Input placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
-              <div className="flex items-center gap-2">
-                <Paperclip className="size-4 text-muted-foreground" />
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
-                  className="text-sm"
-                />
-                {receiptFile && <span className="text-xs text-muted-foreground">{receiptFile.name}</span>}
+              <div className="space-y-1">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent">
+                  <Paperclip className="size-4 text-muted-foreground" />
+                  <span>{receiptFile ? 'Change receipt' : 'Attach receipt'}</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                </label>
+                {receiptFile && (
+                  <p className="truncate text-xs text-muted-foreground" title={receiptFile.name}>
+                    {receiptFile.name}
+                  </p>
+                )}
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>Cancel</Button>
