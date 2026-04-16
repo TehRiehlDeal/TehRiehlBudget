@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useAccountsStore } from '@/stores/accounts';
-import { useTransactionsStore } from '@/stores/transactions';
+import { useCategoriesStore } from '@/stores/categories';
+import { useTransactionsStore, type Transaction } from '@/stores/transactions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,13 +15,21 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
   ChevronRight,
   Paperclip,
+  Pencil,
   Trash2,
 } from 'lucide-react';
+import { TransactionForm } from '@/components/TransactionForm';
 
 function formatCurrency(value: number) {
   const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -31,22 +40,34 @@ export function AccountDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { accounts, fetchAccounts } = useAccountsStore();
+  const { categories, fetchCategories } = useCategoriesStore();
   const {
     transactions,
     total,
     page,
     loading,
     fetchTransactions,
+    updateTransaction,
     deleteTransaction,
   } = useTransactionsStore();
 
+  const [editing, setEditing] = useState<Transaction | null>(null);
+
   useEffect(() => {
     fetchAccounts();
-  }, [fetchAccounts]);
+    fetchCategories();
+  }, [fetchAccounts, fetchCategories]);
 
   useEffect(() => {
     if (id) fetchTransactions({ accountId: id }, 1);
   }, [id, fetchTransactions]);
+
+  const handleUpdate = async (data: any) => {
+    if (!editing) return;
+    await updateTransaction(editing.id, data);
+    setEditing(null);
+    if (id) fetchTransactions({ accountId: id }, page);
+  };
 
   const account = useMemo(
     () => accounts.find((a) => a.id === id),
@@ -153,9 +174,14 @@ export function AccountDetail() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => deleteTransaction(txn.id)}>
-                        <Trash2 className="size-3" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => setEditing(txn)} aria-label="Edit transaction">
+                          <Pencil className="size-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => deleteTransaction(txn.id)} aria-label="Delete transaction">
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -188,6 +214,21 @@ export function AccountDetail() {
           )}
         </>
       )}
+
+      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Transaction</DialogTitle></DialogHeader>
+          {editing && (
+            <TransactionForm
+              initial={editing}
+              accounts={accounts}
+              categories={categories}
+              onSubmit={handleUpdate}
+              onCancel={() => setEditing(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
