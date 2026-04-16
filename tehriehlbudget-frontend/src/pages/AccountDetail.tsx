@@ -30,6 +30,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
+import { openReceipt } from '@/lib/receipts';
 
 function formatCurrency(value: number) {
   const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -170,7 +171,15 @@ export function AccountDetail() {
                     </TableCell>
                     <TableCell>
                       {txn.receiptPath && (
-                        <Paperclip className="size-3.5 text-muted-foreground" />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openReceipt(txn.receiptPath!)}
+                          aria-label="View receipt"
+                          title="View receipt"
+                        >
+                          <Paperclip className="size-3.5" />
+                        </Button>
                       )}
                     </TableCell>
                     <TableCell>

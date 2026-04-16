@@ -41,6 +41,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
+import { openReceipt } from '@/lib/receipts';
 
 const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
 
@@ -208,7 +209,15 @@ export function Transactions() {
                     </TableCell>
                     <TableCell>
                       {txn.receiptPath && (
-                        <Paperclip className="size-3.5 text-muted-foreground" />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openReceipt(txn.receiptPath!)}
+                          aria-label="View receipt"
+                          title="View receipt"
+                        >
+                          <Paperclip className="size-3.5" />
+                        </Button>
                       )}
                     </TableCell>
                     <TableCell>
