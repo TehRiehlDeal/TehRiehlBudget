@@ -19,7 +19,8 @@ import {
 } from 'recharts';
 
 function formatCurrency(value: number) {
-  return `$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+  const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
+  return value < 0 ? `-$${abs}` : `$${abs}`;
 }
 
 export function Dashboard() {
