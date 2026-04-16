@@ -11,6 +11,7 @@ import {
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
+import { ReorderAccountsDto } from './dto/reorder-accounts.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/user.decorator';
 import type { User } from '@prisma/client';
@@ -28,6 +29,11 @@ export class AccountsController {
   @Get()
   findAll(@CurrentUser() user: User) {
     return this.accountsService.findAll(user.id);
+  }
+
+  @Patch('reorder')
+  reorder(@CurrentUser() user: User, @Body() dto: ReorderAccountsDto) {
+    return this.accountsService.reorder(user.id, dto.orderedIds);
   }
 
   @Get(':id')

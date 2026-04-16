@@ -29,6 +29,7 @@ model Account {
   balance       Decimal     @default(0) @db.Decimal(12, 2)
   institution   String?
   accountNumber String?     @map("account_number")
+  sortOrder     Int         @default(0) @map("sort_order")
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 

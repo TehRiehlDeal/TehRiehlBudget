@@ -9,6 +9,7 @@ export interface Account {
   balance: number;
   institution?: string;
   accountNumber?: string;
+  sortOrder?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -20,6 +21,7 @@ interface AccountsState {
   createAccount: (data: Partial<Account>) => Promise<void>;
   updateAccount: (id: string, data: Partial<Account>) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
+  reorderAccounts: (orderedIds: string[]) => Promise<void>;
 }
 
 export const useAccountsStore = create<AccountsState>((set) => ({
@@ -49,5 +51,16 @@ export const useAccountsStore = create<AccountsState>((set) => ({
     set((state) => ({
       accounts: state.accounts.filter((a) => a.id !== id),
     }));
+  },
+
+  reorderAccounts: async (orderedIds) => {
+    // Optimistic update
+    set((state) => ({
+      accounts: orderedIds
+        .map((id) => state.accounts.find((a) => a.id === id))
+        .filter((a): a is Account => Boolean(a)),
+    }));
+    const updated = await api.patch<Account[]>('/accounts/reorder', { orderedIds });
+    set({ accounts: updated });
   },
 }));

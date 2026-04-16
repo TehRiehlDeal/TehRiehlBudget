@@ -37,6 +37,7 @@ describe('AccountsController', () => {
     findOne: jest.fn().mockResolvedValue(mockAccount),
     update: jest.fn().mockResolvedValue({ ...mockAccount, name: 'Updated' }),
     remove: jest.fn().mockResolvedValue(mockAccount),
+    reorder: jest.fn().mockResolvedValue([mockAccount]),
   };
 
   beforeEach(async () => {
@@ -82,5 +83,10 @@ describe('AccountsController', () => {
     const result = await controller.remove(mockUser as any, 'acc-1');
     expect(mockService.remove).toHaveBeenCalledWith('user-123', 'acc-1');
     expect(result).toEqual(mockAccount);
+  });
+
+  it('should reorder accounts', async () => {
+    await controller.reorder(mockUser as any, { orderedIds: ['b', 'a'] });
+    expect(mockService.reorder).toHaveBeenCalledWith('user-123', ['b', 'a']);
   });
 });

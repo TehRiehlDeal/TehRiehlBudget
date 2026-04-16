@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAccountsStore, type Account } from '@/stores/accounts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,7 +19,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const ACCOUNT_TYPES = ['CHECKING', 'SAVINGS', 'CREDIT', 'LOAN', 'STOCK'] as const;
 
@@ -72,10 +88,93 @@ function AccountForm({
   );
 }
 
+function SortableAccountCard({
+  account,
+  onEdit,
+  onDelete,
+  onOpen,
+}: {
+  account: Account;
+  onEdit: () => void;
+  onDelete: () => void;
+  onOpen: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: account.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Card
+        onClick={onOpen}
+        className="cursor-pointer transition-colors hover:bg-accent/40"
+      >
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              aria-label="Drag to reorder"
+              className="-ml-1 touch-none rounded p-1 text-muted-foreground hover:bg-accent"
+              onClick={(e) => e.stopPropagation()}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="size-4" />
+            </button>
+            <CardTitle className="truncate text-sm font-medium">{account.name}</CardTitle>
+          </div>
+          <Badge variant="secondary">{account.type}</Badge>
+        </CardHeader>
+        <CardContent>
+          <p className="text-2xl font-bold">
+            ${Number(account.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          </p>
+          {account.institution && (
+            <p className="text-xs text-muted-foreground">{account.institution}</p>
+          )}
+          <div className="mt-4 flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+            >
+              <Pencil className="mr-1 size-3" /> Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+            >
+              <Trash2 className="mr-1 size-3" /> Delete
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export function Accounts() {
-  const { accounts, loading, fetchAccounts, createAccount, updateAccount, deleteAccount } = useAccountsStore();
+  const { accounts, loading, fetchAccounts, createAccount, updateAccount, deleteAccount, reorderAccounts } = useAccountsStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
+  const navigate = useNavigate();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
 
   useEffect(() => {
     fetchAccounts();
@@ -91,6 +190,16 @@ export function Accounts() {
       await updateAccount(editing.id, data);
       setEditing(null);
     }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = accounts.findIndex((a) => a.id === active.id);
+    const newIndex = accounts.findIndex((a) => a.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reordered = arrayMove(accounts, oldIndex, newIndex).map((a) => a.id);
+    reorderAccounts(reordered);
   };
 
   return (
@@ -113,40 +222,21 @@ export function Accounts() {
       ) : accounts.length === 0 ? (
         <p className="text-muted-foreground">No accounts yet. Add one to get started.</p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((account) => (
-            <Card key={account.id}>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium">{account.name}</CardTitle>
-                <Badge variant="secondary">{account.type}</Badge>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">
-                  ${Number(account.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </p>
-                {account.institution && (
-                  <p className="text-xs text-muted-foreground">{account.institution}</p>
-                )}
-                <div className="mt-4 flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditing(account)}
-                  >
-                    <Pencil className="mr-1 size-3" /> Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => deleteAccount(account.id)}
-                  >
-                    <Trash2 className="mr-1 size-3" /> Delete
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={accounts.map((a) => a.id)} strategy={rectSortingStrategy}>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {accounts.map((account) => (
+                <SortableAccountCard
+                  key={account.id}
+                  account={account}
+                  onOpen={() => navigate(`/accounts/${account.id}`)}
+                  onEdit={() => setEditing(account)}
+                  onDelete={() => deleteAccount(account.id)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {/* Edit dialog */}

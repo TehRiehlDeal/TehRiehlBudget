@@ -33,14 +33,16 @@ describe('AccountsService', () => {
     updatedAt: new Date(),
   };
 
-  const mockPrisma = {
+  const mockPrisma: any = {
     account: {
       create: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
     },
+    $transaction: jest.fn(async (promises: any) => Promise.all(promises)),
   };
 
   const mockEncryption = {
@@ -80,23 +82,78 @@ describe('AccountsService', () => {
           type: AccountType.CHECKING,
           balance: 5000,
           institution: 'BECU',
+          sortOrder: 0,
         },
       });
       expect(result).toEqual(mockAccount);
     });
+
+    it('should assign sortOrder as max+1 when other accounts exist', async () => {
+      mockPrisma.account.aggregate.mockResolvedValueOnce({
+        _max: { sortOrder: 4 },
+      });
+      mockPrisma.account.create.mockResolvedValue(mockAccount);
+
+      await service.create(userId, {
+        name: 'New',
+        type: AccountType.SAVINGS,
+      });
+
+      expect(mockPrisma.account.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sortOrder: 5 }) }),
+      );
+    });
   });
 
   describe('findAll', () => {
-    it('should return all accounts for the user', async () => {
+    it('should return all accounts ordered by sortOrder then createdAt', async () => {
       mockPrisma.account.findMany.mockResolvedValue([mockAccount]);
 
       const result = await service.findAll(userId);
 
       expect(mockPrisma.account.findMany).toHaveBeenCalledWith({
         where: { userId },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
       });
       expect(result).toEqual([mockAccount]);
+    });
+  });
+
+  describe('reorder', () => {
+    it('should update sortOrder for each account in order', async () => {
+      mockPrisma.account.findMany
+        .mockResolvedValueOnce([
+          { id: 'a' },
+          { id: 'b' },
+          { id: 'c' },
+        ])
+        .mockResolvedValueOnce([]);
+      mockPrisma.account.update.mockResolvedValue({});
+
+      await service.reorder(userId, ['c', 'a', 'b']);
+
+      expect(mockPrisma.account.update).toHaveBeenCalledWith({
+        where: { id: 'c' },
+        data: { sortOrder: 0 },
+      });
+      expect(mockPrisma.account.update).toHaveBeenCalledWith({
+        where: { id: 'a' },
+        data: { sortOrder: 1 },
+      });
+      expect(mockPrisma.account.update).toHaveBeenCalledWith({
+        where: { id: 'b' },
+        data: { sortOrder: 2 },
+      });
+    });
+
+    it('should throw BadRequest if any id does not belong to user', async () => {
+      mockPrisma.account.findMany.mockResolvedValueOnce([
+        { id: 'a' },
+        { id: 'b' },
+      ]);
+      await expect(
+        service.reorder(userId, ['a', 'b', 'stranger']),
+      ).rejects.toThrow();
     });
   });
 
