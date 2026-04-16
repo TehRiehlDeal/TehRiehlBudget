@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/auth';
+import { useThemeStore } from '@/stores/theme';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/AppLayout';
 import { Login } from '@/pages/Login';
@@ -12,10 +13,12 @@ import { Categories } from '@/pages/Categories';
 
 function App() {
   const { initialize } = useAuthStore();
+  const initializeTheme = useThemeStore((s) => s.initialize);
 
   useEffect(() => {
+    initializeTheme();
     initialize();
-  }, [initialize]);
+  }, [initialize, initializeTheme]);
 
   return (
     <BrowserRouter>

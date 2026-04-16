@@ -13,6 +13,21 @@ vi.mock('@/stores/auth', () => ({
   })),
 }));
 
+vi.mock('@/stores/theme', () => ({
+  useThemeStore: Object.assign(
+    vi.fn((selector?: any) => {
+      const state = {
+        theme: 'system' as const,
+        resolved: 'light' as const,
+        setTheme: vi.fn(),
+        initialize: vi.fn(),
+      };
+      return selector ? selector(state) : state;
+    }),
+    { getState: () => ({ initialize: vi.fn() }) },
+  ),
+}));
+
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {

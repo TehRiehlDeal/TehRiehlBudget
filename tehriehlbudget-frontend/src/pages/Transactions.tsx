@@ -172,12 +172,12 @@ export function Transactions() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Select
           value={filters.accountId || 'all'}
           onValueChange={(v) => setFilters((f) => ({ ...f, accountId: v === 'all' || v === null ? undefined : v }))}
         >
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All accounts" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All accounts" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All accounts</SelectItem>
             {accounts.map((a) => (
@@ -190,7 +190,7 @@ export function Transactions() {
           value={filters.type || 'all'}
           onValueChange={(v) => setFilters((f) => ({ ...f, type: v === 'all' || v === null ? undefined : v }))}
         >
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="All types" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="All types" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
             {TRANSACTION_TYPES.map((t) => (
@@ -207,6 +207,7 @@ export function Transactions() {
         <p className="text-muted-foreground">No transactions found.</p>
       ) : (
         <>
+        <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -256,6 +257,7 @@ export function Transactions() {
               ))}
             </TableBody>
           </Table>
+        </div>
 
           {/* Pagination */}
           {totalPages > 1 && (

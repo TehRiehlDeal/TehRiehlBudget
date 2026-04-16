@@ -112,7 +112,7 @@ export function Dashboard() {
             {spendingByCategory.length === 0 ? (
               <p className="text-sm text-muted-foreground">No spending data for this period.</p>
             ) : (
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
                     data={spendingByCategory}
@@ -145,7 +145,7 @@ export function Dashboard() {
             {incomeExpenseData.length === 0 ? (
               <p className="text-sm text-muted-foreground">No data yet.</p>
             ) : (
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={incomeExpenseData}>
                   <XAxis dataKey="name" />
                   <YAxis tickFormatter={(v) => `$${v}`} />
