@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus, Sparkles } from 'lucide-react';
+import { formatDate } from '@/lib/dates';
 import {
   PieChart,
   Pie,
@@ -182,7 +183,7 @@ export function Dashboard() {
                   <div>
                     <p className="text-sm font-medium">{txn.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(txn.date).toLocaleDateString()}
+                      {formatDate(txn.date)}
                       {txn.category && ` · ${txn.category.name}`}
                     </p>
                   </div>

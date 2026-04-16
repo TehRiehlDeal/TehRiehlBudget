@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
+import { formatDate } from '@/lib/dates';
 
 const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
 
@@ -179,7 +180,7 @@ export function Transactions() {
               <TableBody>
                 {transactions.map((txn) => (
                   <TableRow key={txn.id}>
-                    <TableCell className="text-sm">{new Date(txn.date).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-sm">{formatDate(txn.date)}</TableCell>
                     <TableCell className="text-sm font-medium">{txn.description}</TableCell>
                     <TableCell>
                       {txn.category && (

@@ -67,6 +67,18 @@ function asPrismaUpdate(
   return delta >= 0 ? { increment: delta } : { decrement: -delta };
 }
 
+/**
+ * Parses a "YYYY-MM-DD" string as noon UTC so the calendar date is preserved
+ * across server/client timezone differences. If the input already has a time
+ * component, only the date portion is used.
+ */
+function parseDateInput(dateStr: string): Date {
+  const datePart = dateStr.slice(0, 10);
+  const [y, m, d] = datePart.split('-').map(Number);
+  if (!y || !m || !d) return new Date(dateStr);
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+}
+
 @Injectable()
 export class TransactionsService {
   constructor(
@@ -78,7 +90,7 @@ export class TransactionsService {
     const data: any = {
       userId,
       ...dto,
-      date: new Date(dto.date),
+      date: parseDateInput(dto.date),
     };
     if (data.notes) {
       data.notes = this.encryption.encryptField(data.notes)!;
@@ -200,7 +212,7 @@ export class TransactionsService {
     }
 
     const data: any = { ...dto };
-    if (dto.date) data.date = new Date(dto.date);
+    if (dto.date) data.date = parseDateInput(dto.date);
     if (data.notes !== undefined) {
       data.notes = this.encryption.encryptField(data.notes);
     }

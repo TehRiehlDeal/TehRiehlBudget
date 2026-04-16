@@ -32,6 +32,7 @@ import {
 import { TransactionForm } from '@/components/TransactionForm';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
 import { api } from '@/lib/api';
+import { formatDate } from '@/lib/dates';
 import {
   LineChart,
   Line,
@@ -237,7 +238,7 @@ export function AccountDetail() {
               <TableBody>
                 {transactions.map((txn) => (
                   <TableRow key={txn.id}>
-                    <TableCell className="text-sm">{new Date(txn.date).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-sm">{formatDate(txn.date)}</TableCell>
                     <TableCell className="text-sm font-medium">{txn.description}</TableCell>
                     <TableCell>
                       {txn.category && (
