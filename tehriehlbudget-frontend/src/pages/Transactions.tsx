@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTransactionsStore, type TransactionFilters } from '@/stores/transactions';
 import { useAccountsStore } from '@/stores/accounts';
 import { useCategoriesStore } from '@/stores/categories';
@@ -45,8 +46,19 @@ export function Transactions() {
   const { accounts, fetchAccounts } = useAccountsStore();
   const { categories, fetchCategories } = useCategoriesStore();
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<TransactionFilters>({});
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(searchParams.get('new') === '1');
+
+  // Auto-open the new transaction dialog when arriving with ?new=1
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setDialogOpen(true);
+      // Clean the query so a refresh doesn't re-open it
+      searchParams.delete('new');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Form state
   const [accountId, setAccountId] = useState('');

@@ -1,11 +1,12 @@
 import { useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useAggregationsStore } from '@/stores/aggregations';
 import { useTransactionsStore } from '@/stores/transactions';
 import { useAdvisorStore } from '@/stores/advisor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Sparkles } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 import {
   PieChart,
   Pie,
@@ -53,7 +54,7 @@ export function Dashboard() {
     : [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <h1 className="text-2xl font-bold">Dashboard</h1>
 
       {/* Summary Cards */}
@@ -229,6 +230,15 @@ export function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Quick transaction FAB */}
+      <Link
+        to="/transactions?new=1"
+        aria-label="Quick add transaction"
+        className="fixed bottom-6 right-6 z-30 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-foreground/10 transition-transform hover:scale-105 active:scale-95"
+      >
+        <Plus className="size-6" />
+      </Link>
     </div>
   );
 }
