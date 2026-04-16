@@ -37,4 +37,8 @@ export class CreateTransactionDto {
 
   @IsDateString()
   date: string;
+
+  @IsString()
+  @IsOptional()
+  receiptPath?: string;
 }
