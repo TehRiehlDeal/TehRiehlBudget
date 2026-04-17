@@ -148,6 +148,176 @@ describe('AggregationsService', () => {
     });
   });
 
+  describe('getCashFlow', () => {
+    const start = '2026-04-01';
+    const end = '2026-04-30';
+
+    it('returns zeros when no transactions', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 0, outflows: 0, net: 0 });
+    });
+
+    it('counts INCOME to CHECKING as inflow', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'INCOME',
+          amount: 5000,
+          account: { type: 'CHECKING' },
+          destinationAccount: null,
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 5000, outflows: 0, net: 5000 });
+    });
+
+    it('counts EXPENSE on CHECKING as outflow', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'EXPENSE',
+          amount: 200,
+          account: { type: 'CHECKING' },
+          destinationAccount: null,
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 0, outflows: 200, net: -200 });
+    });
+
+    it('does NOT count EXPENSE on CREDIT (swipe does not touch cash)', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'EXPENSE',
+          amount: 150,
+          account: { type: 'CREDIT' },
+          destinationAccount: null,
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 0, outflows: 0, net: 0 });
+    });
+
+    it('counts CC payment (TRANSFER checking → credit) as outflow', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'TRANSFER',
+          amount: 300,
+          account: { type: 'CHECKING' },
+          destinationAccount: { type: 'CREDIT' },
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 0, outflows: 300, net: -300 });
+    });
+
+    it('counts loan payment (TRANSFER checking → loan) as outflow', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'TRANSFER',
+          amount: 450,
+          account: { type: 'CHECKING' },
+          destinationAccount: { type: 'LOAN' },
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 0, outflows: 450, net: -450 });
+    });
+
+    it('cancels internal transfers between liquid accounts (checking → savings)', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'TRANSFER',
+          amount: 1000,
+          account: { type: 'CHECKING' },
+          destinationAccount: { type: 'SAVINGS' },
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 1000, outflows: 1000, net: 0 });
+    });
+
+    it('counts investing (TRANSFER checking → stock) as outflow', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'TRANSFER',
+          amount: 500,
+          account: { type: 'CHECKING' },
+          destinationAccount: { type: 'STOCK' },
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 0, outflows: 500, net: -500 });
+    });
+
+    it('does NOT count INCOME on CREDIT (refund to a card)', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'INCOME',
+          amount: 80,
+          account: { type: 'CREDIT' },
+          destinationAccount: null,
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 0, outflows: 0, net: 0 });
+    });
+
+    it('counts TRANSFER from stock → checking as inflow (sale, cash in)', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'TRANSFER',
+          amount: 2000,
+          account: { type: 'STOCK' },
+          destinationAccount: { type: 'CHECKING' },
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 2000, outflows: 0, net: 2000 });
+    });
+
+    it('aggregates a realistic month', async () => {
+      // $5000 paycheck + $200 expense on checking + $300 CC payment
+      //   + $1000 internal checking→savings + $150 swipe on credit (ignored)
+      // inflows = 5000 + 1000 (internal counted on both sides)
+      // outflows = 200 + 300 + 1000
+      // net = 6000 - 1500 = 4500
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          type: 'INCOME',
+          amount: 5000,
+          account: { type: 'CHECKING' },
+          destinationAccount: null,
+        },
+        {
+          type: 'EXPENSE',
+          amount: 200,
+          account: { type: 'CHECKING' },
+          destinationAccount: null,
+        },
+        {
+          type: 'TRANSFER',
+          amount: 300,
+          account: { type: 'CHECKING' },
+          destinationAccount: { type: 'CREDIT' },
+        },
+        {
+          type: 'TRANSFER',
+          amount: 1000,
+          account: { type: 'CHECKING' },
+          destinationAccount: { type: 'SAVINGS' },
+        },
+        {
+          type: 'EXPENSE',
+          amount: 150,
+          account: { type: 'CREDIT' },
+          destinationAccount: null,
+        },
+      ]);
+      const result = await service.getCashFlow(userId, start, end);
+      expect(result).toEqual({ inflows: 6000, outflows: 1500, net: 4500 });
+    });
+  });
+
   describe('getAccountBalanceHistory', () => {
     it('throws NotFound if the account is not owned by the user', async () => {
       mockPrisma.account.findFirst.mockResolvedValue(null);

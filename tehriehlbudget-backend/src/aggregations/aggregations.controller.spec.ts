@@ -37,6 +37,11 @@ describe('AggregationsController', () => {
       { date: '2026-04-01', balance: 100 },
       { date: '2026-04-10', balance: 200 },
     ]),
+    getCashFlow: jest.fn().mockResolvedValue({
+      inflows: 5000,
+      outflows: 3500,
+      net: 1500,
+    }),
   };
 
   beforeEach(async () => {
@@ -94,5 +99,19 @@ describe('AggregationsController', () => {
       'acc-1',
       30,
     );
+  });
+
+  it('should return cash flow for a date range', async () => {
+    const result = await controller.getCashFlow(mockUser, {
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
+    });
+
+    expect(mockService.getCashFlow).toHaveBeenCalledWith(
+      'user-123',
+      '2026-04-01',
+      '2026-04-30',
+    );
+    expect(result).toEqual({ inflows: 5000, outflows: 3500, net: 1500 });
   });
 });

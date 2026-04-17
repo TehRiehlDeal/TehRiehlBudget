@@ -35,6 +35,15 @@ export class AggregationsController {
     );
   }
 
+  @Get('cash-flow')
+  getCashFlow(@CurrentUser() user: User, @Query() query: DateRangeQuery) {
+    return this.aggregationsService.getCashFlow(
+      user.id,
+      query.startDate,
+      query.endDate,
+    );
+  }
+
   @Get('account-balance-history/:accountId')
   getAccountBalanceHistory(
     @CurrentUser() user: User,

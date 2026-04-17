@@ -11,6 +11,12 @@ function parseDateRange(startDate?: string, endDate?: string) {
 
 const LIABILITY_TYPES: AccountType[] = [AccountType.CREDIT, AccountType.LOAN];
 
+const LIQUID_TYPES: AccountType[] = [
+  AccountType.CHECKING,
+  AccountType.SAVINGS,
+  AccountType.CASH,
+];
+
 /**
  * Returns the signed delta that a transaction applies to an account's balance,
  * using the same asset/liability sign rules as the transfer logic.
@@ -228,6 +234,60 @@ export class AggregationsService {
 
     // Return oldest first for charting
     return points.reverse();
+  }
+
+  /**
+   * Returns cash flow over a period from the perspective of liquid accounts
+   * (CHECKING, SAVINGS, CASH). Inflows = money entering liquid accounts;
+   * outflows = money leaving them. This naturally excludes credit-card swipes
+   * (no cash moved yet) and correctly counts card/loan payments as outflows.
+   * Internal transfers between two liquid accounts appear on both sides, so
+   * `net` remains accurate as the change in total liquid-cash balance.
+   */
+  async getCashFlow(
+    userId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<{ inflows: number; outflows: number; net: number }> {
+    const { start, end } = parseDateRange(startDate, endDate);
+    const txns = await this.prisma.transaction.findMany({
+      where: {
+        userId,
+        date: { gte: start, lte: end },
+        OR: [
+          { account: { type: { in: LIQUID_TYPES } } },
+          { destinationAccount: { type: { in: LIQUID_TYPES } } },
+        ],
+      },
+      select: {
+        type: true,
+        amount: true,
+        account: { select: { type: true } },
+        destinationAccount: { select: { type: true } },
+      },
+    });
+
+    let inflows = 0;
+    let outflows = 0;
+
+    for (const t of txns) {
+      const amount = Number(t.amount);
+      const sourceLiquid = LIQUID_TYPES.includes(t.account.type);
+      const destLiquid = t.destinationAccount
+        ? LIQUID_TYPES.includes(t.destinationAccount.type)
+        : false;
+
+      if (t.type === TransactionType.INCOME && sourceLiquid) {
+        inflows += amount;
+      } else if (t.type === TransactionType.EXPENSE && sourceLiquid) {
+        outflows += amount;
+      } else if (t.type === TransactionType.TRANSFER) {
+        if (sourceLiquid) outflows += amount;
+        if (destLiquid) inflows += amount;
+      }
+    }
+
+    return { inflows, outflows, net: inflows - outflows };
   }
 
   async getSummary(userId: string, startDate: string, endDate: string) {

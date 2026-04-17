@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAggregationsStore } from '@/stores/aggregations';
 import { useTransactionsStore } from '@/stores/transactions';
@@ -25,27 +25,66 @@ function formatCurrency(value: number) {
   return value < 0 ? `-$${abs}` : `$${abs}`;
 }
 
+type RangeKey = 'this-month' | 'last-30' | 'last-90' | 'ytd';
+
+const RANGE_LABELS: Record<RangeKey, string> = {
+  'this-month': 'This month',
+  'last-30': 'Last 30 days',
+  'last-90': 'Last 90 days',
+  ytd: 'Year to date',
+};
+
+function computeRange(key: RangeKey): { startDate: string; endDate: string } {
+  const now = new Date();
+  const toIso = (d: Date) => d.toISOString().split('T')[0];
+  let start: Date;
+  let end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (key) {
+    case 'this-month':
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      break;
+    case 'last-30':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
+      break;
+    case 'last-90':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 89);
+      break;
+    case 'ytd':
+      start = new Date(now.getFullYear(), 0, 1);
+      break;
+  }
+  return { startDate: toIso(start), endDate: toIso(end) };
+}
+
 export function Dashboard() {
-  const { summary, spendingByCategory, fetchSummary, fetchSpendingByCategory } =
-    useAggregationsStore();
+  const {
+    summary,
+    spendingByCategory,
+    cashFlow,
+    fetchSummary,
+    fetchSpendingByCategory,
+    fetchCashFlow,
+  } = useAggregationsStore();
   const { transactions, fetchTransactions } = useTransactionsStore();
   const { insights, loading: advisorLoading, fetchInsights } = useAdvisorStore();
 
-  const dateRange = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return {
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0],
-    };
-  }, []);
+  const [range, setRange] = useState<RangeKey>('this-month');
+  const dateRange = useMemo(() => computeRange(range), [range]);
 
   useEffect(() => {
     fetchSummary(dateRange.startDate, dateRange.endDate);
     fetchSpendingByCategory(dateRange.startDate, dateRange.endDate);
+    fetchCashFlow(dateRange.startDate, dateRange.endDate);
     fetchTransactions({}, 1);
-  }, [fetchSummary, fetchSpendingByCategory, fetchTransactions, dateRange]);
+  }, [
+    fetchSummary,
+    fetchSpendingByCategory,
+    fetchCashFlow,
+    fetchTransactions,
+    dateRange,
+  ]);
 
   const incomeExpenseData = summary
     ? [
@@ -54,9 +93,30 @@ export function Dashboard() {
       ]
     : [];
 
+  const cashFlowData = cashFlow
+    ? [
+        { name: 'Inflows', value: cashFlow.inflows },
+        { name: 'Outflows', value: cashFlow.outflows },
+      ]
+    : [];
+
   return (
     <div className="space-y-6 pb-24">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex flex-wrap gap-1">
+          {(Object.keys(RANGE_LABELS) as RangeKey[]).map((key) => (
+            <Button
+              key={key}
+              variant={range === key ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setRange(key)}
+            >
+              {RANGE_LABELS[key]}
+            </Button>
+          ))}
+        </div>
+      </div>
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -81,7 +141,7 @@ export function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Income (This Month)
+              Income ({RANGE_LABELS[range]})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -93,7 +153,7 @@ export function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Expenses (This Month)
+              Expenses ({RANGE_LABELS[range]})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -103,6 +163,64 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Cash Flow Card */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle>Cash Flow ({RANGE_LABELS[range]})</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Net change in liquid accounts (checking, savings, cash) — includes
+            credit-card and loan payments as outflows.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {!cashFlow ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="grid grid-cols-3 items-center gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Inflows</p>
+                  <p className="text-xl font-bold text-green-600">
+                    {formatCurrency(cashFlow.inflows)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Outflows</p>
+                  <p className="text-xl font-bold text-destructive">
+                    {formatCurrency(cashFlow.outflows)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Net remaining</p>
+                  <p
+                    className={`text-xl font-bold ${
+                      cashFlow.net >= 0 ? 'text-green-600' : 'text-destructive'
+                    }`}
+                  >
+                    {formatCurrency(cashFlow.net)}
+                  </p>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={cashFlowData}>
+                  <XAxis dataKey="name" />
+                  <YAxis tickFormatter={(v) => `$${v}`} />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {cashFlowData.map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={entry.name === 'Inflows' ? '#4CAF50' : '#EF4444'}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Charts Row */}
       <div className="grid gap-6 md:grid-cols-2">

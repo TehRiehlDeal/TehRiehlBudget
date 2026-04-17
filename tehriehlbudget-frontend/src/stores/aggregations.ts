@@ -15,17 +15,26 @@ interface CategorySpending {
   amount: number;
 }
 
+interface CashFlow {
+  inflows: number;
+  outflows: number;
+  net: number;
+}
+
 interface AggregationsState {
   summary: Summary | null;
   spendingByCategory: CategorySpending[];
+  cashFlow: CashFlow | null;
   loading: boolean;
   fetchSummary: (startDate: string, endDate: string) => Promise<void>;
   fetchSpendingByCategory: (startDate: string, endDate: string) => Promise<void>;
+  fetchCashFlow: (startDate: string, endDate: string) => Promise<void>;
 }
 
 export const useAggregationsStore = create<AggregationsState>((set) => ({
   summary: null,
   spendingByCategory: [],
+  cashFlow: null,
   loading: false,
 
   fetchSummary: async (startDate, endDate) => {
@@ -41,5 +50,12 @@ export const useAggregationsStore = create<AggregationsState>((set) => ({
       `/aggregations/spending-by-category?startDate=${startDate}&endDate=${endDate}`,
     );
     set({ spendingByCategory: data });
+  },
+
+  fetchCashFlow: async (startDate, endDate) => {
+    const data = await api.get<CashFlow>(
+      `/aggregations/cash-flow?startDate=${startDate}&endDate=${endDate}`,
+    );
+    set({ cashFlow: data });
   },
 }));
