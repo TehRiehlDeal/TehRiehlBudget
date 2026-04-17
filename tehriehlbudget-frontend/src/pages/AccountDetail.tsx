@@ -31,8 +31,11 @@ import {
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
+import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
-import { formatDate } from '@/lib/dates';
+import { formatDate, todayInputValue } from '@/lib/dates';
+import { isMarketValue } from '@/lib/accountTypes';
+import { Plus } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -68,6 +71,13 @@ export function AccountDetail() {
   const [history, setHistory] = useState<{ date: string; balance: number }[]>([]);
   const [historyDays, setHistoryDays] = useState(90);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [valuations, setValuations] = useState<
+    { id: string; date: string; value: number }[]
+  >([]);
+  const [valuationDialogOpen, setValuationDialogOpen] = useState(false);
+  const [valuationDate, setValuationDate] = useState(todayInputValue());
+  const [valuationAmount, setValuationAmount] = useState('');
+  const [valuationRefresh, setValuationRefresh] = useState(0);
 
   useEffect(() => {
     fetchAccounts();
@@ -101,7 +111,38 @@ export function AccountDetail() {
     return () => {
       cancelled = true;
     };
-  }, [id, historyDays]);
+  }, [id, historyDays, valuationRefresh]);
+
+  const account = useMemo(
+    () => accounts.find((a) => a.id === id),
+    [accounts, id],
+  );
+
+  const showValuations = account ? isMarketValue(account.type) : false;
+
+  useEffect(() => {
+    if (!id || !showValuations) {
+      setValuations([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ id: string; date: string; value: number }[]>(
+        `/accounts/${id}/valuations?days=365`,
+      )
+      .then((data) => {
+        if (!cancelled) setValuations(data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to load valuations', err);
+          setValuations([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, showValuations, valuationRefresh]);
 
   const handleUpdate = async (data: any) => {
     if (!editing) return;
@@ -110,10 +151,26 @@ export function AccountDetail() {
     if (id) fetchTransactions({ accountId: id }, page);
   };
 
-  const account = useMemo(
-    () => accounts.find((a) => a.id === id),
-    [accounts, id],
-  );
+  const handleCreateValuation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !valuationAmount) return;
+    await api.post(`/accounts/${id}/valuations`, {
+      date: valuationDate,
+      value: parseFloat(valuationAmount),
+    });
+    setValuationDialogOpen(false);
+    setValuationAmount('');
+    setValuationDate(todayInputValue());
+    await fetchAccounts();
+    setValuationRefresh((n) => n + 1);
+  };
+
+  const handleDeleteValuation = async (valuationId: string) => {
+    if (!id) return;
+    await api.delete(`/accounts/${id}/valuations/${valuationId}`);
+    await fetchAccounts();
+    setValuationRefresh((n) => n + 1);
+  };
 
   const totalPages = Math.ceil(total / 20);
 
@@ -151,17 +208,28 @@ export function AccountDetail() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-base">Balance over time</CardTitle>
-          <div className="flex gap-1">
-            {[30, 90, 180, 365].map((d) => (
+          <div className="flex items-center gap-2">
+            {showValuations && (
               <Button
-                key={d}
-                variant={historyDays === d ? 'secondary' : 'ghost'}
+                variant="outline"
                 size="sm"
-                onClick={() => setHistoryDays(d)}
+                onClick={() => setValuationDialogOpen(true)}
               >
-                {d}d
+                <Plus className="mr-1 size-3.5" /> Log value
               </Button>
-            ))}
+            )}
+            <div className="flex gap-1">
+              {[30, 90, 180, 365].map((d) => (
+                <Button
+                  key={d}
+                  variant={historyDays === d ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setHistoryDays(d)}
+                >
+                  {d}d
+                </Button>
+              ))}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -205,6 +273,43 @@ export function AccountDetail() {
           )}
         </CardContent>
       </Card>
+
+      {showValuations && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Valuations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {valuations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No valuations logged yet. Click "Log value" to record today's total.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {[...valuations].reverse().map((v) => (
+                  <div
+                    key={v.id}
+                    className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                  >
+                    <span className="text-muted-foreground">{formatDate(v.date)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{formatCurrency(Number(v.value))}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteValuation(v.id)}
+                        aria-label="Delete valuation"
+                      >
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Transactions</h2>
@@ -334,6 +439,46 @@ export function AccountDetail() {
               onCancel={() => setEditing(null)}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={valuationDialogOpen} onOpenChange={setValuationDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Log account value</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateValuation} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Date</label>
+              <Input
+                type="date"
+                value={valuationDate}
+                onChange={(e) => setValuationDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Total value</label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="e.g. 52340.00"
+                value={valuationAmount}
+                onChange={(e) => setValuationAmount(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setValuationDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!valuationAmount}>
+                Save
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 

@@ -13,15 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Paperclip } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { toDateInputValue } from '@/lib/dates';
-
-function todayInputValue(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
+import { toDateInputValue, todayInputValue } from '@/lib/dates';
 
 const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
 

@@ -5,7 +5,15 @@ export interface Account {
   id: string;
   userId: string;
   name: string;
-  type: 'CHECKING' | 'SAVINGS' | 'CREDIT' | 'LOAN' | 'STOCK';
+  type:
+    | 'CHECKING'
+    | 'SAVINGS'
+    | 'CREDIT'
+    | 'LOAN'
+    | 'STOCK'
+    | 'CASH'
+    | 'INVESTMENT'
+    | 'RETIREMENT';
   balance: number;
   institution?: string;
   accountNumber?: string;

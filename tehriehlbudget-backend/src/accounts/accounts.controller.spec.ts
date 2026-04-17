@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AccountsController } from './accounts.controller';
 import { AccountsService } from './accounts.service';
+import { ValuationsService } from '../valuations/valuations.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { AccountType } from '@prisma/client';
 
@@ -12,6 +13,9 @@ jest.mock('@prisma/client', () => ({
     CREDIT: 'CREDIT',
     LOAN: 'LOAN',
     STOCK: 'STOCK',
+    CASH: 'CASH',
+    INVESTMENT: 'INVESTMENT',
+    RETIREMENT: 'RETIREMENT',
   },
 }));
 
@@ -40,11 +44,20 @@ describe('AccountsController', () => {
     reorder: jest.fn().mockResolvedValue([mockAccount]),
   };
 
+  const mockValuationsService = {
+    create: jest.fn().mockResolvedValue({ id: 'v-1', accountId: 'acc-1', value: 100 }),
+    list: jest.fn().mockResolvedValue([{ id: 'v-1', accountId: 'acc-1', value: 100 }]),
+    remove: jest.fn().mockResolvedValue({ success: true }),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AccountsController],
-      providers: [{ provide: AccountsService, useValue: mockService }],
+      providers: [
+        { provide: AccountsService, useValue: mockService },
+        { provide: ValuationsService, useValue: mockValuationsService },
+      ],
     })
       .overrideGuard(AuthGuard)
       .useValue({ canActivate: () => true })
@@ -88,5 +101,26 @@ describe('AccountsController', () => {
   it('should reorder accounts', async () => {
     await controller.reorder(mockUser as any, { orderedIds: ['b', 'a'] });
     expect(mockService.reorder).toHaveBeenCalledWith('user-123', ['b', 'a']);
+  });
+
+  it('creates a valuation for an account', async () => {
+    const dto = { date: '2026-04-17', value: 52340 };
+    await controller.createValuation(mockUser as any, 'acc-1', dto);
+    expect(mockValuationsService.create).toHaveBeenCalledWith('user-123', 'acc-1', dto);
+  });
+
+  it('lists valuations with default 365-day window', async () => {
+    await controller.listValuations(mockUser as any, 'acc-1');
+    expect(mockValuationsService.list).toHaveBeenCalledWith('user-123', 'acc-1', 365);
+  });
+
+  it('passes through custom days query param for valuation list', async () => {
+    await controller.listValuations(mockUser as any, 'acc-1', '30');
+    expect(mockValuationsService.list).toHaveBeenCalledWith('user-123', 'acc-1', 30);
+  });
+
+  it('removes a valuation', async () => {
+    await controller.removeValuation(mockUser as any, 'v-1');
+    expect(mockValuationsService.remove).toHaveBeenCalledWith('user-123', 'v-1');
   });
 });

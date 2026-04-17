@@ -10,6 +10,9 @@ jest.mock('@prisma/client', () => ({
     CREDIT: 'CREDIT',
     LOAN: 'LOAN',
     STOCK: 'STOCK',
+    CASH: 'CASH',
+    INVESTMENT: 'INVESTMENT',
+    RETIREMENT: 'RETIREMENT',
   },
   TransactionType: { INCOME: 'INCOME', EXPENSE: 'EXPENSE', TRANSFER: 'TRANSFER' },
 }));
@@ -27,6 +30,9 @@ describe('AggregationsService', () => {
     transaction: {
       aggregate: jest.fn(),
       groupBy: jest.fn(),
+      findMany: jest.fn(),
+    },
+    accountValuation: {
       findMany: jest.fn(),
     },
     $queryRaw: jest.fn(),
@@ -54,7 +60,12 @@ describe('AggregationsService', () => {
       const result = await service.getNetWorth(userId);
       expect(result).toBe(13000.5);
       expect(mockPrisma.account.aggregate).toHaveBeenCalledWith({
-        where: { userId, type: { in: ['CHECKING', 'SAVINGS', 'STOCK'] } },
+        where: {
+          userId,
+          type: {
+            in: ['CHECKING', 'SAVINGS', 'STOCK', 'CASH', 'INVESTMENT', 'RETIREMENT'],
+          },
+        },
         _sum: { balance: true },
       });
       expect(mockPrisma.account.aggregate).toHaveBeenCalledWith({
@@ -206,6 +217,57 @@ describe('AggregationsService', () => {
       const result = await service.getAccountBalanceHistory(userId, 'acc-cc');
       expect(result[0].balance).toBe(400); // before the charge
       expect(result[result.length - 1].balance).toBe(500);
+    });
+
+    it('uses valuations (not transactions) for STOCK accounts', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue({
+        id: 'acc-stock',
+        type: 'STOCK',
+        balance: 10000,
+      });
+      mockPrisma.accountValuation.findMany.mockResolvedValue([
+        { date: new Date('2026-04-01'), value: 9500 },
+        { date: new Date('2026-04-08'), value: 9800 },
+        { date: new Date('2026-04-15'), value: 10000 },
+      ]);
+
+      const result = await service.getAccountBalanceHistory(userId, 'acc-stock');
+
+      expect(mockPrisma.accountValuation.findMany).toHaveBeenCalled();
+      expect(mockPrisma.transaction.findMany).not.toHaveBeenCalled();
+      expect(result).toEqual([
+        { date: '2026-04-01', balance: 9500 },
+        { date: '2026-04-08', balance: 9800 },
+        { date: '2026-04-15', balance: 10000 },
+      ]);
+    });
+
+    it('uses valuations for RETIREMENT accounts', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue({
+        id: 'acc-401k',
+        type: 'RETIREMENT',
+        balance: 50000,
+      });
+      mockPrisma.accountValuation.findMany.mockResolvedValue([
+        { date: new Date('2026-04-01'), value: 50000 },
+      ]);
+
+      const result = await service.getAccountBalanceHistory(userId, 'acc-401k');
+      expect(mockPrisma.transaction.findMany).not.toHaveBeenCalled();
+      expect(result).toHaveLength(1);
+      expect(result[0].balance).toBe(50000);
+    });
+
+    it('uses valuations for INVESTMENT accounts', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue({
+        id: 'acc-inv',
+        type: 'INVESTMENT',
+        balance: 7500,
+      });
+      mockPrisma.accountValuation.findMany.mockResolvedValue([]);
+
+      const result = await service.getAccountBalanceHistory(userId, 'acc-inv');
+      expect(result).toEqual([]);
     });
   });
 });

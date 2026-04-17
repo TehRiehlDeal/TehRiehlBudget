@@ -36,7 +36,16 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const ACCOUNT_TYPES = ['CHECKING', 'SAVINGS', 'CREDIT', 'LOAN', 'STOCK'] as const;
+const ACCOUNT_TYPES = [
+  'CHECKING',
+  'SAVINGS',
+  'CASH',
+  'STOCK',
+  'INVESTMENT',
+  'RETIREMENT',
+  'CREDIT',
+  'LOAN',
+] as const;
 
 function AccountForm({
   initial,

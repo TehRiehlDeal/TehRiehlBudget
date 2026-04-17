@@ -11,6 +11,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { FilesModule } from './files/files.module';
 import { AggregationsModule } from './aggregations/aggregations.module';
 import { AdvisorModule } from './advisor/advisor.module';
+import { ValuationsModule } from './valuations/valuations.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AdvisorModule } from './advisor/advisor.module';
     FilesModule,
     AggregationsModule,
     AdvisorModule,
+    ValuationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

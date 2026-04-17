@@ -13,6 +13,9 @@ jest.mock('@prisma/client', () => ({
     CREDIT: 'CREDIT',
     LOAN: 'LOAN',
     STOCK: 'STOCK',
+    CASH: 'CASH',
+    INVESTMENT: 'INVESTMENT',
+    RETIREMENT: 'RETIREMENT',
   },
   Prisma: {},
 }));

@@ -53,7 +53,12 @@ export class AggregationsService {
   async getNetWorth(userId: string): Promise<number> {
     const [assets, liabilities] = await Promise.all([
       this.prisma.account.aggregate({
-        where: { userId, type: { in: ['CHECKING', 'SAVINGS', 'STOCK'] } },
+        where: {
+          userId,
+          type: {
+            in: ['CHECKING', 'SAVINGS', 'STOCK', 'CASH', 'INVESTMENT', 'RETIREMENT'],
+          },
+        },
         _sum: { balance: true },
       }),
       this.prisma.account.aggregate({
@@ -134,10 +139,14 @@ export class AggregationsService {
   }
 
   /**
-   * Returns a time series of the account's balance, anchored on the current
-   * stored balance. Works backward from "now" through all transactions that
-   * affect this account (either as source or transfer destination), reversing
-   * each delta to reconstruct historical points.
+   * Returns a time series of the account's balance over `days`.
+   *
+   * For market-value accounts (STOCK, INVESTMENT, RETIREMENT), the series comes
+   * directly from logged `AccountValuation` rows — one chart point per snapshot.
+   *
+   * For transaction-driven accounts (CHECKING, SAVINGS, CASH, CREDIT, LOAN),
+   * the series is reconstructed by walking transactions backward from the
+   * current stored balance and reversing each delta.
    */
   async getAccountBalanceHistory(
     userId: string,
@@ -152,9 +161,27 @@ export class AggregationsService {
       throw new NotFoundException('Account not found');
     }
 
-    const currentBalance = Number(account.balance);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
+
+    // Market-value accounts: plot valuations directly
+    if (
+      account.type === AccountType.STOCK ||
+      account.type === AccountType.INVESTMENT ||
+      account.type === AccountType.RETIREMENT
+    ) {
+      const valuations = await this.prisma.accountValuation.findMany({
+        where: { accountId, date: { gte: cutoff } },
+        orderBy: { date: 'asc' },
+        select: { date: true, value: true },
+      });
+      return valuations.map((v) => ({
+        date: v.date.toISOString().split('T')[0],
+        balance: Number(v.value),
+      }));
+    }
+
+    const currentBalance = Number(account.balance);
 
     // Pull all transactions affecting this account in the window, ordered newest first
     const txns = await this.prisma.transaction.findMany({

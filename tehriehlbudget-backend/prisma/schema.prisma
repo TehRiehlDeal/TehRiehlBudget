@@ -33,9 +33,10 @@ model Account {
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
-  user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions           Transaction[] @relation("AccountTransactions")
-  incomingTransfers      Transaction[] @relation("DestinationAccountTransactions")
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions           Transaction[]      @relation("AccountTransactions")
+  incomingTransfers      Transaction[]      @relation("DestinationAccountTransactions")
+  valuations             AccountValuation[]
 
   @@map("accounts")
 }
@@ -46,6 +47,22 @@ enum AccountType {
   CREDIT
   LOAN
   STOCK
+  CASH
+  INVESTMENT
+  RETIREMENT
+}
+
+model AccountValuation {
+  id        String   @id @default(uuid())
+  accountId String   @map("account_id")
+  date      DateTime
+  value     Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, date])
+  @@map("account_valuations")
 }
 
 model Transaction {
