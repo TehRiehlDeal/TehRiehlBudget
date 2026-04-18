@@ -1,24 +1,56 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
 
-interface AdvisorInsights {
-  insights: string;
-  generatedAt: string;
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 interface AdvisorState {
-  insights: AdvisorInsights | null;
+  messages: ChatMessage[];
+  generatedAt: string | null;
   loading: boolean;
-  fetchInsights: () => Promise<void>;
+  startConversation: () => Promise<void>;
+  sendMessage: (content: string) => Promise<void>;
+  resetConversation: () => void;
 }
 
-export const useAdvisorStore = create<AdvisorState>((set) => ({
-  insights: null,
+async function callChat(messages: ChatMessage[]): Promise<ChatMessage> {
+  return api.post<ChatMessage>('/advisor/chat', { messages });
+}
+
+export const useAdvisorStore = create<AdvisorState>((set, get) => ({
+  messages: [],
+  generatedAt: null,
   loading: false,
 
-  fetchInsights: async () => {
+  startConversation: async () => {
     set({ loading: true });
-    const data = await api.get<AdvisorInsights>('/advisor/insights');
-    set({ insights: data, loading: false });
+    try {
+      const reply = await callChat([]);
+      set({
+        messages: [reply],
+        generatedAt: new Date().toISOString(),
+        loading: false,
+      });
+    } catch (err) {
+      set({ loading: false });
+      throw err;
+    }
   },
+
+  sendMessage: async (content) => {
+    const userMessage: ChatMessage = { role: 'user', content };
+    const next = [...get().messages, userMessage];
+    set({ messages: next, loading: true });
+    try {
+      const reply = await callChat(next);
+      set({ messages: [...next, reply], loading: false });
+    } catch (err) {
+      set({ loading: false });
+      throw err;
+    }
+  },
+
+  resetConversation: () => set({ messages: [], generatedAt: null }),
 }));

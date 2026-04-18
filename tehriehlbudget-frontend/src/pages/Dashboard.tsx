@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAggregationsStore } from '@/stores/aggregations';
 import { useTransactionsStore } from '@/stores/transactions';
@@ -6,7 +6,8 @@ import { useAdvisorStore } from '@/stores/advisor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Sparkles } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Plus, RotateCcw, Send, Sparkles } from 'lucide-react';
 import { formatDate } from '@/lib/dates';
 import {
   PieChart,
@@ -68,7 +69,34 @@ export function Dashboard() {
     fetchCashFlow,
   } = useAggregationsStore();
   const { transactions, fetchTransactions } = useTransactionsStore();
-  const { insights, loading: advisorLoading, fetchInsights } = useAdvisorStore();
+  const {
+    messages: advisorMessages,
+    loading: advisorLoading,
+    startConversation,
+    sendMessage,
+    resetConversation,
+  } = useAdvisorStore();
+  const [followUp, setFollowUp] = useState('');
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [advisorMessages]);
+
+  const handleSendFollowUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = followUp.trim();
+    if (!trimmed || advisorLoading) return;
+    setFollowUp('');
+    await sendMessage(trimmed);
+  };
+
+  const handleRestart = async () => {
+    resetConversation();
+    await startConversation();
+  };
 
   const [range, setRange] = useState<RangeKey>('this-month');
   const dateRange = useMemo(() => computeRange(range), [range]);
@@ -321,31 +349,82 @@ export function Dashboard() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="size-5" />
-            AI Financial Insights
+            AI Financial Buddy
           </CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchInsights}
-            disabled={advisorLoading}
-          >
-            {advisorLoading ? 'Analyzing...' : 'Get Advice'}
-          </Button>
+          {advisorMessages.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRestart}
+              disabled={advisorLoading}
+              aria-label="Restart conversation"
+              title="Restart conversation"
+            >
+              <RotateCcw className="size-4" />
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
-          {insights ? (
-            <div className="space-y-2">
-              <div className="whitespace-pre-line text-sm leading-relaxed">
-                {insights.insights}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Generated {new Date(insights.generatedAt).toLocaleString()}
+          {advisorMessages.length === 0 ? (
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-sm text-muted-foreground">
+                Get a conversational read on how your month is going, then ask
+                follow-up questions for deeper guidance.
               </p>
+              <Button onClick={startConversation} disabled={advisorLoading}>
+                <Sparkles className="mr-1 size-4" />
+                {advisorLoading ? 'Analyzing...' : 'Get Advice'}
+              </Button>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Click "Get Advice" to receive AI-powered financial insights based on your spending patterns.
-            </p>
+            <div className="space-y-3">
+              <div
+                ref={chatScrollRef}
+                className="max-h-[50vh] space-y-3 overflow-y-auto pr-2"
+              >
+                {advisorMessages.map((m, i) => (
+                  <div
+                    key={i}
+                    className={`flex ${
+                      m.role === 'user' ? 'justify-end' : 'justify-start'
+                    }`}
+                  >
+                    <div
+                      className={`max-w-[85%] whitespace-pre-line rounded-lg px-3 py-2 text-sm leading-relaxed ${
+                        m.role === 'user'
+                          ? 'bg-primary/10 text-foreground'
+                          : 'bg-muted text-foreground'
+                      }`}
+                    >
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+                {advisorLoading && (
+                  <div className="flex justify-start">
+                    <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+                      Thinking...
+                    </div>
+                  </div>
+                )}
+              </div>
+              <form onSubmit={handleSendFollowUp} className="flex gap-2">
+                <Input
+                  value={followUp}
+                  onChange={(e) => setFollowUp(e.target.value)}
+                  placeholder="Ask a follow-up..."
+                  disabled={advisorLoading}
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!followUp.trim() || advisorLoading}
+                  aria-label="Send"
+                >
+                  <Send className="size-4" />
+                </Button>
+              </form>
+            </div>
           )}
         </CardContent>
       </Card>

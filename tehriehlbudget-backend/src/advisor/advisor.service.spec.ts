@@ -73,20 +73,32 @@ describe('AdvisorService', () => {
       const data = {
         userId: 'user-123',
         email: 'test@example.com',
-        name: 'John Doe',
         accountNumber: '1234-5678',
         netWorth: 15000,
-        categories: [{ name: 'Groceries', amount: 800 }],
       };
 
       const stripped = service.stripPII(data);
 
       expect(stripped).not.toHaveProperty('userId');
       expect(stripped).not.toHaveProperty('email');
-      expect(stripped).not.toHaveProperty('name');
       expect(stripped).not.toHaveProperty('accountNumber');
       expect(stripped).toHaveProperty('netWorth', 15000);
-      expect(stripped).toHaveProperty('categories');
+    });
+
+    it('preserves `name` on category labels (regression: was wiping them)', () => {
+      // Category names like "Groceries" are not PII. They were being stripped
+      // by the overzealous PII filter, causing the LLM to see `undefined`.
+      const data = {
+        categories: [
+          { categoryId: 'c1', name: 'Groceries', amount: 800 },
+          { categoryId: 'c2', name: 'Dining Out', amount: 450 },
+        ],
+      };
+
+      const stripped = service.stripPII(data);
+
+      expect(stripped.categories[0].name).toBe('Groceries');
+      expect(stripped.categories[1].name).toBe('Dining Out');
     });
 
     it('should handle nested objects', () => {
@@ -101,16 +113,18 @@ describe('AdvisorService', () => {
     });
   });
 
+  const mockOllamaOnce = (content: string) =>
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ message: { content } }),
+    });
+
+  const getFetchBody = (callIndex = 0) =>
+    JSON.parse(mockFetch.mock.calls[callIndex][1].body);
+
   describe('getAdvice', () => {
     it('should call Ollama and return insights', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          message: {
-            content: '1. Great savings rate!\n2. Reduce dining costs.',
-          },
-        }),
-      });
+      mockOllamaOnce('Nice — you trimmed dining costs by $50 vs last month.');
 
       const result = await service.getAdvice(userId);
 
@@ -121,7 +135,32 @@ describe('AdvisorService', () => {
         expect.objectContaining({ method: 'POST' }),
       );
       expect(result).toHaveProperty('insights');
-      expect(result.insights).toContain('savings rate');
+      expect(result.insights).toContain('dining');
+      expect(result).toHaveProperty('generatedAt');
+    });
+
+    it('system prompt renders actual category names (not "undefined")', async () => {
+      mockOllamaOnce('opening analysis');
+      await service.getAdvice(userId);
+
+      const body = getFetchBody();
+      const systemMessage = body.messages.find((m: any) => m.role === 'system');
+      expect(systemMessage).toBeDefined();
+      expect(systemMessage.content).toContain('Groceries');
+      expect(systemMessage.content).toContain('Dining Out');
+      expect(systemMessage.content).not.toContain('undefined');
+    });
+
+    it('system prompt includes prior-month comparison context', async () => {
+      mockOllamaOnce('opening analysis');
+      await service.getAdvice(userId);
+
+      const body = getFetchBody();
+      const systemMessage = body.messages.find((m: any) => m.role === 'system');
+      // Aggregations are called for BOTH current and previous months
+      expect(mockAggregations.getSummary).toHaveBeenCalledTimes(2);
+      expect(mockAggregations.getSpendingByCategory).toHaveBeenCalledTimes(2);
+      expect(systemMessage.content).toMatch(/last month/i);
     });
 
     it('should throw on Ollama failure', async () => {
@@ -131,6 +170,72 @@ describe('AdvisorService', () => {
       });
 
       await expect(service.getAdvice(userId)).rejects.toThrow('Ollama request failed');
+    });
+  });
+
+  describe('chat', () => {
+    it('threads client messages after the system prompt', async () => {
+      mockOllamaOnce('Totally — dining out was $450 this month.');
+
+      const reply = await service.chat(userId, [
+        { role: 'user', content: 'What about dining?' },
+      ]);
+
+      const body = getFetchBody();
+      expect(body.messages).toHaveLength(2);
+      expect(body.messages[0].role).toBe('system');
+      expect(body.messages[1]).toEqual({
+        role: 'user',
+        content: 'What about dining?',
+      });
+      expect(reply).toEqual({
+        role: 'assistant',
+        content: 'Totally — dining out was $450 this month.',
+      });
+    });
+
+    it('preserves full multi-turn history in order', async () => {
+      mockOllamaOnce('Good follow-up answer');
+
+      await service.chat(userId, [
+        { role: 'user', content: 'How am I doing?' },
+        { role: 'assistant', content: 'Pretty well overall.' },
+        { role: 'user', content: 'What should I cut?' },
+      ]);
+
+      const body = getFetchBody();
+      expect(body.messages).toHaveLength(4);
+      expect(body.messages.map((m: any) => m.role)).toEqual([
+        'system',
+        'user',
+        'assistant',
+        'user',
+      ]);
+      expect(body.messages[3].content).toBe('What should I cut?');
+    });
+
+    it('rebuilds context on every call (stateless)', async () => {
+      mockOllamaOnce('first');
+      mockOllamaOnce('second');
+
+      await service.chat(userId, []);
+      await service.chat(userId, []);
+
+      // Each chat call triggers a fresh pair of aggregation fetches for both months.
+      expect(mockAggregations.getSummary).toHaveBeenCalledTimes(4);
+      expect(mockAggregations.getSpendingByCategory).toHaveBeenCalledTimes(4);
+    });
+
+    it('returns empty string when Ollama returns no content', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: null }),
+      });
+
+      const reply = await service.chat(userId, [
+        { role: 'user', content: 'hi' },
+      ]);
+      expect(reply).toEqual({ role: 'assistant', content: '' });
     });
   });
 });

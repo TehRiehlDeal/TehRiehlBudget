@@ -28,6 +28,10 @@ describe('AdvisorController', () => {
       insights: '1. Great savings rate!\n2. Consider reducing dining costs.',
       generatedAt: '2026-04-12T00:00:00.000Z',
     }),
+    chat: jest.fn().mockResolvedValue({
+      role: 'assistant',
+      content: 'Dining Out was $450 this month — down $50 vs last month.',
+    }),
   };
 
   beforeEach(async () => {
@@ -49,5 +53,21 @@ describe('AdvisorController', () => {
     expect(mockService.getAdvice).toHaveBeenCalledWith('user-123');
     expect(result).toHaveProperty('insights');
     expect(result).toHaveProperty('generatedAt');
+  });
+
+  it('POST /chat forwards messages to the service', async () => {
+    const body = {
+      messages: [
+        { role: 'user' as const, content: 'What about dining?' },
+      ],
+    };
+
+    const result = await controller.chat(mockUser, body);
+
+    expect(mockService.chat).toHaveBeenCalledWith('user-123', body.messages);
+    expect(result).toEqual({
+      role: 'assistant',
+      content: 'Dining Out was $450 this month — down $50 vs last month.',
+    });
   });
 });

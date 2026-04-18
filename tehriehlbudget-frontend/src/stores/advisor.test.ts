@@ -11,20 +11,67 @@ import { useAdvisorStore } from './advisor';
 describe('useAdvisorStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAdvisorStore.setState({ insights: null, loading: false });
+    useAdvisorStore.setState({
+      messages: [],
+      generatedAt: null,
+      loading: false,
+    });
   });
 
-  it('should fetch AI insights', async () => {
-    const mockData = {
-      insights: '1. Great savings rate!\n2. Reduce dining.',
+  it('startConversation posts empty messages and stores the assistant reply', async () => {
+    mockApi.post.mockResolvedValue({
+      role: 'assistant',
+      content: 'Nice month — you trimmed dining by $50.',
+    });
+
+    await useAdvisorStore.getState().startConversation();
+
+    expect(mockApi.post).toHaveBeenCalledWith('/advisor/chat', { messages: [] });
+    const state = useAdvisorStore.getState();
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0].role).toBe('assistant');
+    expect(state.loading).toBe(false);
+    expect(state.generatedAt).not.toBeNull();
+  });
+
+  it('sendMessage appends user turn then assistant reply', async () => {
+    useAdvisorStore.setState({
+      messages: [{ role: 'assistant', content: 'Opening analysis.' }],
+    });
+    mockApi.post.mockResolvedValue({
+      role: 'assistant',
+      content: 'Dining was $450.',
+    });
+
+    await useAdvisorStore.getState().sendMessage('What about dining?');
+
+    expect(mockApi.post).toHaveBeenCalledWith('/advisor/chat', {
+      messages: [
+        { role: 'assistant', content: 'Opening analysis.' },
+        { role: 'user', content: 'What about dining?' },
+      ],
+    });
+    const state = useAdvisorStore.getState();
+    expect(state.messages).toHaveLength(3);
+    expect(state.messages[1]).toEqual({
+      role: 'user',
+      content: 'What about dining?',
+    });
+    expect(state.messages[2]).toEqual({
+      role: 'assistant',
+      content: 'Dining was $450.',
+    });
+  });
+
+  it('resetConversation clears messages and timestamp', () => {
+    useAdvisorStore.setState({
+      messages: [{ role: 'assistant', content: 'hi' }],
       generatedAt: '2026-04-12T00:00:00.000Z',
-    };
-    mockApi.get.mockResolvedValue(mockData);
+    });
 
-    await useAdvisorStore.getState().fetchInsights();
+    useAdvisorStore.getState().resetConversation();
 
-    expect(mockApi.get).toHaveBeenCalledWith('/advisor/insights');
-    expect(useAdvisorStore.getState().insights).toEqual(mockData);
-    expect(useAdvisorStore.getState().loading).toBe(false);
+    expect(useAdvisorStore.getState().messages).toEqual([]);
+    expect(useAdvisorStore.getState().generatedAt).toBeNull();
   });
 });
