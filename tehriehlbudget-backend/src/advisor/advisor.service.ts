@@ -69,9 +69,22 @@ export class AdvisorService {
     const context = await this.buildContext(userId);
     const systemPrompt = this.buildSystemPrompt(context);
 
+    // Chat models won't produce a reply from a system message alone — they
+    // need a user turn to respond to. When the client opens a fresh
+    // conversation, prime it with an opening prompt.
+    const primedMessages: ChatMessage[] = clientMessages.length
+      ? clientMessages
+      : [
+          {
+            role: 'user',
+            content:
+              "Hey, how am I doing this month? Lead with the single most important thing I should know — a specific win worth celebrating or a specific concern to address — grounded in the numbers.",
+          },
+        ];
+
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...clientMessages,
+      ...primedMessages,
     ];
 
     const response = await fetch(`${this.ollamaUrl}/api/chat`, {

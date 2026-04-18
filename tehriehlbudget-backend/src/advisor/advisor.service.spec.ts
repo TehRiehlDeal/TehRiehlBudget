@@ -214,6 +214,21 @@ describe('AdvisorService', () => {
       expect(body.messages[3].content).toBe('What should I cut?');
     });
 
+    it('primes with a user turn when client messages is empty (so Ollama actually replies)', async () => {
+      // Chat models return empty content if given only a system message with no
+      // user turn to respond to — this was causing the "Get Advice" button
+      // to return blank replies on first click.
+      mockOllamaOnce('Opening analysis here.');
+
+      await service.chat(userId, []);
+
+      const body = getFetchBody();
+      expect(body.messages).toHaveLength(2);
+      expect(body.messages[0].role).toBe('system');
+      expect(body.messages[1].role).toBe('user');
+      expect(body.messages[1].content.length).toBeGreaterThan(0);
+    });
+
     it('rebuilds context on every call (stateless)', async () => {
       mockOllamaOnce('first');
       mockOllamaOnce('second');
