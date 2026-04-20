@@ -446,6 +446,54 @@ describe('AggregationsService', () => {
       expect(result[0].balance).toBe(50000);
     });
 
+    it('orders same-day transactions by createdAt so walk-back matches insertion order', async () => {
+      // Regression: same-day transactions were walked in arbitrary order,
+      // producing chart points that dipped below the pre-income balance
+      // even when income was entered before the expenses.
+      //
+      // Prior balance was $950. Same day (4/17):
+      //   t1 INCOME $5000 (created first)
+      //   t2 EXPENSE $100 (created after)
+      // Current balance = 950 + 5000 - 100 = 5850.
+      //
+      // Walking back newest-createdAt first, the sequence (oldest-first) must be:
+      //   before income: $950
+      //   after income / before expense: $5950
+      //   current: $5850
+      mockPrisma.account.findFirst.mockResolvedValue({
+        id: 'acc-1',
+        type: 'CHECKING',
+        balance: 5850,
+      });
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          id: 't2',
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          type: 'EXPENSE',
+          amount: 100,
+          date: new Date('2026-04-17T12:00:00Z'),
+          createdAt: new Date('2026-04-17T10:05:00Z'),
+        },
+        {
+          id: 't1',
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          type: 'INCOME',
+          amount: 5000,
+          date: new Date('2026-04-17T12:00:00Z'),
+          createdAt: new Date('2026-04-17T10:00:00Z'),
+        },
+      ]);
+
+      const result = await service.getAccountBalanceHistory(userId, 'acc-1');
+
+      const call = mockPrisma.transaction.findMany.mock.calls[0][0];
+      expect(call.orderBy).toEqual([{ date: 'desc' }, { createdAt: 'desc' }]);
+
+      expect(result.map((p) => p.balance)).toEqual([950, 5950, 5850]);
+    });
+
     it('uses valuations for INVESTMENT accounts', async () => {
       mockPrisma.account.findFirst.mockResolvedValue({
         id: 'acc-inv',

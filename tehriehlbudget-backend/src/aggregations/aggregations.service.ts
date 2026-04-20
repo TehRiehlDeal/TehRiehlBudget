@@ -210,14 +210,18 @@ export class AggregationsService {
 
     const currentBalance = Number(account.balance);
 
-    // Pull all transactions affecting this account in the window, ordered newest first
+    // Pull all transactions affecting this account in the window, ordered
+    // newest first. The secondary `createdAt` sort matters for same-day
+    // transactions: since they share the noon-UTC date, Prisma would otherwise
+    // return them in arbitrary order and the walk-back would reconstruct an
+    // incorrect sequence (e.g. income appearing after expenses on the chart).
     const txns = await this.prisma.transaction.findMany({
       where: {
         userId,
         OR: [{ accountId }, { destinationAccountId: accountId }],
         date: { gte: cutoff },
       },
-      orderBy: { date: 'desc' },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       select: {
         id: true,
         accountId: true,

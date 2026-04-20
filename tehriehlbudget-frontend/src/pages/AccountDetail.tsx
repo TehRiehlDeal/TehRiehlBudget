@@ -245,9 +245,12 @@ export function AccountDetail() {
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
                   dataKey="date"
-                  tickFormatter={(v) => {
-                    const d = new Date(v);
-                    return `${d.getMonth() + 1}/${d.getDate()}`;
+                  tickFormatter={(v: string) => {
+                    // Parse YYYY-MM-DD as local components to avoid UTC
+                    // midnight being rendered as the previous day in
+                    // timezones west of UTC.
+                    const [, m, d] = v.slice(0, 10).split('-').map(Number);
+                    return `${m}/${d}`;
                   }}
                   fontSize={11}
                 />
@@ -258,7 +261,9 @@ export function AccountDetail() {
                 />
                 <Tooltip
                   formatter={(value: any) => formatCurrency(Number(value))}
-                  labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                  labelFormatter={(label) =>
+                    typeof label === 'string' ? formatDate(label) : String(label ?? '')
+                  }
                 />
                 <Line
                   type="monotone"
