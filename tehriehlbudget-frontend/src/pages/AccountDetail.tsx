@@ -70,7 +70,13 @@ export function AccountDetail() {
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
   const [history, setHistory] = useState<
-    { date: string; balance: number; description?: string; change?: number }[]
+    {
+      date: string;
+      balance: number;
+      timestamp: number;
+      description?: string;
+      change?: number;
+    }[]
   >([]);
   const [historyDays, setHistoryDays] = useState(90);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -100,6 +106,7 @@ export function AccountDetail() {
         {
           date: string;
           balance: number;
+          timestamp: number;
           description?: string;
           change?: number;
         }[]
@@ -252,13 +259,13 @@ export function AccountDetail() {
               <LineChart data={history} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
-                  dataKey="date"
-                  tickFormatter={(v: string) => {
-                    // Parse YYYY-MM-DD as local components to avoid UTC
-                    // midnight being rendered as the previous day in
-                    // timezones west of UTC.
-                    const [, m, d] = v.slice(0, 10).split('-').map(Number);
-                    return `${m}/${d}`;
+                  dataKey="timestamp"
+                  type="number"
+                  scale="time"
+                  domain={['dataMin', 'dataMax']}
+                  tickFormatter={(v: number) => {
+                    const d = new Date(v);
+                    return `${d.getMonth() + 1}/${d.getDate()}`;
                   }}
                   fontSize={11}
                 />

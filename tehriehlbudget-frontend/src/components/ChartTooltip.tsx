@@ -91,15 +91,10 @@ interface BalancePoint {
  * current balance, and — when the point corresponds to a transaction —
  * that transaction's description and signed change.
  */
-export function BalanceTooltip({
-  active,
-  payload,
-  label,
-}: TooltipRenderProps) {
+export function BalanceTooltip({ active, payload }: TooltipRenderProps) {
   if (!active || !payload || payload.length === 0) return null;
   const point = payload[0].payload as unknown as BalancePoint;
-  const dateLabel =
-    typeof label === 'string' ? formatDate(label) : String(label ?? '');
+  const dateLabel = formatDate(point.date);
   const hasChange = typeof point.change === 'number';
 
   return (

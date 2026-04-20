@@ -183,6 +183,7 @@ export class AggregationsService {
     {
       date: string;
       balance: number;
+      timestamp: number;
       description?: string;
       change?: number;
     }[]
@@ -212,6 +213,7 @@ export class AggregationsService {
       return valuations.map((v) => ({
         date: v.date.toISOString().split('T')[0],
         balance: Number(v.value),
+        timestamp: v.date.getTime(),
       }));
     }
 
@@ -237,6 +239,7 @@ export class AggregationsService {
         amount: true,
         date: true,
         description: true,
+        createdAt: true,
       },
     });
 
@@ -244,12 +247,15 @@ export class AggregationsService {
     const points: {
       date: string;
       balance: number;
+      timestamp: number;
       description?: string;
       change?: number;
     }[] = [];
+    const now = new Date();
     points.push({
-      date: new Date().toISOString().split('T')[0],
+      date: now.toISOString().split('T')[0],
       balance: currentBalance,
+      timestamp: now.getTime(),
     });
 
     let running = currentBalance;
@@ -267,6 +273,7 @@ export class AggregationsService {
       points.push({
         date: t.date.toISOString().split('T')[0],
         balance: running,
+        timestamp: t.createdAt.getTime(),
         description: t.description,
         change: delta,
       });

@@ -364,6 +364,7 @@ describe('AggregationsService', () => {
           amount: 50,
           date: new Date('2026-04-10'),
           description: 'Grocery run',
+          createdAt: new Date('2026-04-10T15:00:00Z'),
         },
         {
           id: 't1',
@@ -373,6 +374,7 @@ describe('AggregationsService', () => {
           amount: 200,
           date: new Date('2026-04-05'),
           description: 'Paycheck',
+          createdAt: new Date('2026-04-05T08:00:00Z'),
         },
       ]);
 
@@ -391,6 +393,52 @@ describe('AggregationsService', () => {
       expect(result[1].change).toBe(-50);
       expect(result[2].description).toBeUndefined();
       expect(result[2].change).toBeUndefined();
+
+      // Each transaction point has a unique timestamp from its createdAt so
+      // the chart x-axis can disambiguate same-day entries.
+      expect(result[0].timestamp).toBe(new Date('2026-04-05T08:00:00Z').getTime());
+      expect(result[1].timestamp).toBe(new Date('2026-04-10T15:00:00Z').getTime());
+      expect(typeof result[2].timestamp).toBe('number');
+    });
+
+    it('same-day transactions get distinct timestamps so tooltip can pick the right one', async () => {
+      // Regression: balance chart tooltip was showing the same transaction's
+      // description for every point on a shared date because the x-axis value
+      // was duplicated. Each point needs a unique timestamp.
+      mockPrisma.account.findFirst.mockResolvedValue({
+        id: 'acc-1',
+        type: 'CHECKING',
+        balance: 5850,
+      });
+      mockPrisma.transaction.findMany.mockResolvedValue([
+        {
+          id: 't2',
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          type: 'EXPENSE',
+          amount: 100,
+          date: new Date('2026-04-17T12:00:00Z'),
+          description: 'Bill A',
+          createdAt: new Date('2026-04-17T10:05:00Z'),
+        },
+        {
+          id: 't1',
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          type: 'INCOME',
+          amount: 5000,
+          date: new Date('2026-04-17T12:00:00Z'),
+          description: 'Paycheck',
+          createdAt: new Date('2026-04-17T10:00:00Z'),
+        },
+      ]);
+
+      const result = await service.getAccountBalanceHistory(userId, 'acc-1');
+
+      // The two same-day points must have different timestamps.
+      const txnPoints = result.filter((p) => p.description);
+      expect(txnPoints).toHaveLength(2);
+      expect(txnPoints[0].timestamp).not.toBe(txnPoints[1].timestamp);
     });
 
     it('treats credit-card expenses as debt increase when walking backwards', async () => {
@@ -409,6 +457,8 @@ describe('AggregationsService', () => {
           type: 'EXPENSE',
           amount: 100,
           date: new Date('2026-04-05'),
+          description: 'Charge',
+          createdAt: new Date('2026-04-05T12:00:00Z'),
         },
       ]);
 
@@ -434,9 +484,21 @@ describe('AggregationsService', () => {
       expect(mockPrisma.accountValuation.findMany).toHaveBeenCalled();
       expect(mockPrisma.transaction.findMany).not.toHaveBeenCalled();
       expect(result).toEqual([
-        { date: '2026-04-01', balance: 9500 },
-        { date: '2026-04-08', balance: 9800 },
-        { date: '2026-04-15', balance: 10000 },
+        {
+          date: '2026-04-01',
+          balance: 9500,
+          timestamp: new Date('2026-04-01').getTime(),
+        },
+        {
+          date: '2026-04-08',
+          balance: 9800,
+          timestamp: new Date('2026-04-08').getTime(),
+        },
+        {
+          date: '2026-04-15',
+          balance: 10000,
+          timestamp: new Date('2026-04-15').getTime(),
+        },
       ]);
     });
 
