@@ -73,7 +73,6 @@ export function AccountDetail() {
     {
       date: string;
       balance: number;
-      timestamp: number;
       description?: string;
       change?: number;
     }[]
@@ -106,7 +105,6 @@ export function AccountDetail() {
         {
           date: string;
           balance: number;
-          timestamp: number;
           description?: string;
           change?: number;
         }[]
@@ -189,6 +187,14 @@ export function AccountDetail() {
 
   const totalPages = Math.ceil(total / 20);
 
+  // Index each point so the chart's x-axis can treat points as equidistant
+  // categorical slots (avoiding real-time spacing that clusters same-day
+  // entries) while still uniquely identifying each point for the tooltip.
+  const chartData = useMemo(
+    () => history.map((p, index) => ({ ...p, index })),
+    [history],
+  );
+
   if (!id) return null;
 
   return (
@@ -256,16 +262,18 @@ export function AccountDetail() {
             </p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={history} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
-                  dataKey="timestamp"
-                  type="number"
-                  scale="time"
-                  domain={['dataMin', 'dataMax']}
-                  tickFormatter={(v: number) => {
-                    const d = new Date(v);
-                    return `${d.getMonth() + 1}/${d.getDate()}`;
+                  dataKey="index"
+                  type="category"
+                  tickFormatter={(v) => {
+                    const point = chartData[Number(v)];
+                    if (!point) return '';
+                    // Parse the YYYY-MM-DD locally to avoid off-by-one when
+                    // toLocaleString interprets midnight UTC.
+                    const [, m, d] = point.date.slice(0, 10).split('-').map(Number);
+                    return `${m}/${d}`;
                   }}
                   fontSize={11}
                 />
