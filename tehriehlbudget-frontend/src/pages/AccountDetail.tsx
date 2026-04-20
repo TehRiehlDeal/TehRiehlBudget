@@ -45,6 +45,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { BalanceTooltip } from '@/components/ChartTooltip';
 
 function formatCurrency(value: number) {
   const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -68,7 +69,9 @@ export function AccountDetail() {
 
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
-  const [history, setHistory] = useState<{ date: string; balance: number }[]>([]);
+  const [history, setHistory] = useState<
+    { date: string; balance: number; description?: string; change?: number }[]
+  >([]);
   const [historyDays, setHistoryDays] = useState(90);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [valuations, setValuations] = useState<
@@ -93,9 +96,14 @@ export function AccountDetail() {
     let cancelled = false;
     setHistoryLoading(true);
     api
-      .get<{ date: string; balance: number }[]>(
-        `/aggregations/account-balance-history/${id}?days=${historyDays}`,
-      )
+      .get<
+        {
+          date: string;
+          balance: number;
+          description?: string;
+          change?: number;
+        }[]
+      >(`/aggregations/account-balance-history/${id}?days=${historyDays}`)
       .then((data) => {
         if (!cancelled) setHistory(data);
       })
@@ -259,12 +267,7 @@ export function AccountDetail() {
                   fontSize={11}
                   width={70}
                 />
-                <Tooltip
-                  formatter={(value: any) => formatCurrency(Number(value))}
-                  labelFormatter={(label) =>
-                    typeof label === 'string' ? formatDate(label) : String(label ?? '')
-                  }
-                />
+                <Tooltip content={<BalanceTooltip />} />
                 <Line
                   type="monotone"
                   dataKey="balance"

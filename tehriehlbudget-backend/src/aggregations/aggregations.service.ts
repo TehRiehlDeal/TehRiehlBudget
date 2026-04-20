@@ -179,7 +179,14 @@ export class AggregationsService {
     userId: string,
     accountId: string,
     days = 90,
-  ): Promise<{ date: string; balance: number }[]> {
+  ): Promise<
+    {
+      date: string;
+      balance: number;
+      description?: string;
+      change?: number;
+    }[]
+  > {
     const account = await this.prisma.account.findFirst({
       where: { id: accountId, userId },
       select: { id: true, type: true, balance: true },
@@ -229,11 +236,17 @@ export class AggregationsService {
         type: true,
         amount: true,
         date: true,
+        description: true,
       },
     });
 
     // Walk from current balance back in time, computing balance-before-each-txn
-    const points: { date: string; balance: number }[] = [];
+    const points: {
+      date: string;
+      balance: number;
+      description?: string;
+      change?: number;
+    }[] = [];
     points.push({
       date: new Date().toISOString().split('T')[0],
       balance: currentBalance,
@@ -254,6 +267,8 @@ export class AggregationsService {
       points.push({
         date: t.date.toISOString().split('T')[0],
         balance: running,
+        description: t.description,
+        change: delta,
       });
     }
 

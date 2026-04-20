@@ -347,8 +347,8 @@ describe('AggregationsService', () => {
     it('reconstructs history for an asset account walking transactions backward', async () => {
       // Current balance: $1000 on CHECKING.
       // Transactions (newest first):
-      //   - $50 expense
-      //   - $200 income
+      //   - $50 expense (Grocery run)
+      //   - $200 income (Paycheck)
       // So before the income, balance was $800. Before the expense, balance was $1050.
       mockPrisma.account.findFirst.mockResolvedValue({
         id: 'acc-1',
@@ -363,6 +363,7 @@ describe('AggregationsService', () => {
           type: 'EXPENSE',
           amount: 50,
           date: new Date('2026-04-10'),
+          description: 'Grocery run',
         },
         {
           id: 't1',
@@ -371,6 +372,7 @@ describe('AggregationsService', () => {
           type: 'INCOME',
           amount: 200,
           date: new Date('2026-04-05'),
+          description: 'Paycheck',
         },
       ]);
 
@@ -381,6 +383,14 @@ describe('AggregationsService', () => {
       expect(result[0].balance).toBe(850); // before the $200 income
       expect(result[1].balance).toBe(1050); // before the $50 expense
       expect(result[2].balance).toBe(1000); // current
+
+      // Transaction points carry description + signed change; today point does not.
+      expect(result[0].description).toBe('Paycheck');
+      expect(result[0].change).toBe(200);
+      expect(result[1].description).toBe('Grocery run');
+      expect(result[1].change).toBe(-50);
+      expect(result[2].description).toBeUndefined();
+      expect(result[2].change).toBeUndefined();
     });
 
     it('treats credit-card expenses as debt increase when walking backwards', async () => {

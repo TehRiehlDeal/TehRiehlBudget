@@ -128,3 +128,17 @@
     @apply font-sans;
     }
 }
+
+/* Kill the mobile tap-highlight box + focus outline on recharts SVGs so
+   tapping a chart on mobile doesn't draw an ugly rectangle around the
+   hit region. */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-surface * {
+  -webkit-tap-highlight-color: transparent;
+}
+.recharts-wrapper *:focus,
+.recharts-surface *:focus {
+  outline: none;
+}

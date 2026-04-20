@@ -20,6 +20,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { ChartTooltip } from '@/components/ChartTooltip';
 
 function formatCurrency(value: number) {
   const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -234,7 +235,7 @@ export function Dashboard() {
                 <BarChart data={cashFlowData}>
                   <XAxis dataKey="name" />
                   <YAxis tickFormatter={(v) => `$${v}`} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Tooltip content={<ChartTooltip />} />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                     {cashFlowData.map((entry, i) => (
                       <Cell
@@ -278,7 +279,7 @@ export function Dashboard() {
                       <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Tooltip content={<ChartTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -298,7 +299,7 @@ export function Dashboard() {
                 <BarChart data={incomeExpenseData}>
                   <XAxis dataKey="name" />
                   <YAxis tickFormatter={(v) => `$${v}`} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Tooltip content={<ChartTooltip />} />
                   <Bar dataKey="value" fill="var(--color-primary)" radius={[4, 4, 0, 0]}>
                     {incomeExpenseData.map((entry, i) => (
                       <Cell
