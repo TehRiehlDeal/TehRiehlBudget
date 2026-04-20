@@ -123,6 +123,24 @@ describe('AggregationsService', () => {
       expect(result.income).toBe(5000);
       expect(result.expense).toBe(3200);
     });
+
+    it('includes noon-UTC transactions on the end date of the range', async () => {
+      // Regression: transactions are stored at noon UTC. If parseDateRange
+      // ended at midnight UTC, a transaction dated "2026-04-30" (stored as
+      // 2026-04-30T12:00:00Z) would fall AFTER the end boundary and be
+      // silently dropped from the dashboard aggregates.
+      mockPrisma.transaction.groupBy.mockResolvedValue([]);
+
+      await service.getIncomeVsExpense(userId, '2026-04-01', '2026-04-30');
+
+      const call = mockPrisma.transaction.groupBy.mock.calls[0][0];
+      const end: Date = call.where.date.lte;
+      const start: Date = call.where.date.gte;
+      const noonUtcOnEndDate = new Date(Date.UTC(2026, 3, 30, 12, 0, 0));
+      const noonUtcOnStartDate = new Date(Date.UTC(2026, 3, 1, 12, 0, 0));
+      expect(end.getTime()).toBeGreaterThanOrEqual(noonUtcOnEndDate.getTime());
+      expect(start.getTime()).toBeLessThanOrEqual(noonUtcOnStartDate.getTime());
+    });
   });
 
   describe('getSpendingByCategory', () => {

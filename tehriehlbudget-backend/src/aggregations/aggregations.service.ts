@@ -2,10 +2,31 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountType, TransactionType } from '@prisma/client';
 
+// Transactions are stored at noon UTC (see transactions.service.ts:parseDateInput).
+// The range must span the whole calendar day in UTC so a transaction dated
+// "YYYY-MM-DD" (stored at T12:00:00Z) is included when its date equals either
+// the start or end of the range.
 function parseDateRange(startDate?: string, endDate?: string) {
   const now = new Date();
-  const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = endDate ? new Date(endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  const startOfDay = (dateStr: string) => {
+    const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+  };
+  const endOfDay = (dateStr: string) => {
+    const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
+  };
+
+  const start = startDate
+    ? startOfDay(startDate)
+    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  const end = endDate
+    ? endOfDay(endDate)
+    : new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999),
+      );
+
   return { start, end };
 }
 
