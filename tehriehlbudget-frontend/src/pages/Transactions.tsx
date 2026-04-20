@@ -61,15 +61,28 @@ export function Transactions() {
   const { categories, fetchCategories } = useCategoriesStore();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filters, setFilters] = useState<TransactionFilters>({});
+  const [filters, setFilters] = useState<TransactionFilters>(() => {
+    const categoryId = searchParams.get('categoryId');
+    return categoryId ? { categoryId } : {};
+  });
   const [createOpen, setCreateOpen] = useState(searchParams.get('new') === '1');
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
 
   useEffect(() => {
+    let changed = false;
     if (searchParams.get('new') === '1') {
       setCreateOpen(true);
       searchParams.delete('new');
+      changed = true;
+    }
+    if (searchParams.get('categoryId')) {
+      // Initial filter already applied via useState; drop the param so
+      // filter edits stay in UI state only, matching accountId/type.
+      searchParams.delete('categoryId');
+      changed = true;
+    }
+    if (changed) {
       setSearchParams(searchParams, { replace: true });
     }
   }, [searchParams, setSearchParams]);
@@ -84,6 +97,8 @@ export function Transactions() {
 
   const accountName = (id: string | null | undefined) =>
     id ? accounts.find((a) => a.id === id)?.name ?? '' : '';
+  const categoryName = (id: string | null | undefined) =>
+    id ? categories.find((c) => c.id === id)?.name ?? '' : '';
   const typeLabel = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 
   const handleCreate = async (data: any) => {
@@ -151,6 +166,32 @@ export function Transactions() {
             <SelectItem value="all">All types</SelectItem>
             {TRANSACTION_TYPES.map((t) => (
               <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={filters.categoryId || 'all'}
+          onValueChange={(v) =>
+            setFilters((f) => ({
+              ...f,
+              categoryId: v === 'all' || v === null ? undefined : v,
+            }))
+          }
+        >
+          <SelectTrigger className="w-full sm:w-[180px]">
+            <SelectValue placeholder="All categories">
+              {(v: any) =>
+                v === 'all' ? 'All categories' : categoryName(v) || 'All categories'
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {categories.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>

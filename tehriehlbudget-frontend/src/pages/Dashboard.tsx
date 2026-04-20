@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAggregationsStore } from '@/stores/aggregations';
 import { useTransactionsStore } from '@/stores/transactions';
 import { useAdvisorStore } from '@/stores/advisor';
@@ -61,6 +61,7 @@ function computeRange(key: RangeKey): { startDate: string; endDate: string } {
 }
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const {
     summary,
     spendingByCategory,
@@ -274,6 +275,11 @@ export function Dashboard() {
                     label={({ name, percent }) =>
                       `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
                     }
+                    onClick={(entry: any) => {
+                      if (entry?.categoryId) {
+                        navigate(`/transactions?categoryId=${entry.categoryId}`);
+                      }
+                    }}
                   >
                     {spendingByCategory.map((entry, i) => (
                       <Cell key={i} fill={entry.color} />

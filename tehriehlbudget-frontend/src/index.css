@@ -142,3 +142,8 @@
 .recharts-surface *:focus {
   outline: none;
 }
+
+/* Pie slices on the dashboard drill into filtered transactions on click. */
+.recharts-pie-sector {
+  cursor: pointer;
+}
