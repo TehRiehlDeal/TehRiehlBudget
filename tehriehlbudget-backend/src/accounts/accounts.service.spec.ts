@@ -3,7 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
-import { AccountType } from '@prisma/client';
+import { AccountType, TransactionType } from '@prisma/client';
 
 jest.mock('@prisma/client', () => ({
   PrismaClient: class {},
@@ -17,6 +17,7 @@ jest.mock('@prisma/client', () => ({
     INVESTMENT: 'INVESTMENT',
     RETIREMENT: 'RETIREMENT',
   },
+  TransactionType: { INCOME: 'INCOME', EXPENSE: 'EXPENSE', TRANSFER: 'TRANSFER' },
 }));
 
 describe('AccountsService', () => {
@@ -36,6 +37,19 @@ describe('AccountsService', () => {
     updatedAt: new Date(),
   };
 
+  const makeTxClient = () => ({
+    transaction: {
+      findMany: jest.fn(),
+    },
+    account: {
+      findMany: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+  });
+
+  let txClient: ReturnType<typeof makeTxClient>;
+
   const mockPrisma: any = {
     account: {
       create: jest.fn(),
@@ -45,7 +59,7 @@ describe('AccountsService', () => {
       delete: jest.fn(),
       aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
     },
-    $transaction: jest.fn(async (promises: any) => Promise.all(promises)),
+    $transaction: jest.fn(),
   };
 
   const mockEncryption = {
@@ -55,6 +69,12 @@ describe('AccountsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    txClient = makeTxClient();
+    // Support both array form (reorder uses promises) and callback form (remove uses cb).
+    mockPrisma.$transaction = jest.fn(async (arg: any) =>
+      typeof arg === 'function' ? arg(txClient) : Promise.all(arg),
+    );
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AccountsService,
@@ -203,22 +223,200 @@ describe('AccountsService', () => {
   });
 
   describe('remove', () => {
-    it('should delete an account owned by the user', async () => {
+    it('should throw NotFoundException if account not found', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(null);
+
+      await expect(service.remove(userId, 'nonexistent')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should delete an account with no related transactions without touching other balances', async () => {
       mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
-      mockPrisma.account.delete.mockResolvedValue(mockAccount);
+      txClient.transaction.findMany.mockResolvedValue([]);
+      txClient.account.findMany.mockResolvedValue([]);
+      txClient.account.delete.mockResolvedValue(mockAccount);
 
       const result = await service.remove(userId, 'acc-1');
 
-      expect(mockPrisma.account.delete).toHaveBeenCalledWith({
+      expect(txClient.account.update).not.toHaveBeenCalled();
+      expect(txClient.account.delete).toHaveBeenCalledWith({
         where: { id: 'acc-1' },
       });
       expect(result).toEqual(mockAccount);
     });
 
-    it('should throw NotFoundException if account not found', async () => {
-      mockPrisma.account.findFirst.mockResolvedValue(null);
+    it('should not touch counter-party balances for INCOME/EXPENSE transactions', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
+      txClient.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          type: TransactionType.EXPENSE,
+          amount: 50,
+        },
+        {
+          id: 't2',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          type: TransactionType.INCOME,
+          amount: 200,
+        },
+      ]);
+      txClient.account.findMany.mockResolvedValue([]);
+      txClient.account.delete.mockResolvedValue(mockAccount);
 
-      await expect(service.remove(userId, 'nonexistent')).rejects.toThrow(NotFoundException);
+      await service.remove(userId, 'acc-1');
+
+      expect(txClient.account.update).not.toHaveBeenCalled();
+      expect(txClient.account.delete).toHaveBeenCalledWith({
+        where: { id: 'acc-1' },
+      });
+    });
+
+    it('should reverse a TRANSFER on the surviving destination when the source account is deleted', async () => {
+      // Source: Checking (acc-1). Destination: Savings (acc-2, asset).
+      // Transfer of $100 had credited Savings +100. Deleting Checking must debit Savings -100.
+      mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
+      txClient.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: 'acc-2',
+          type: TransactionType.TRANSFER,
+          amount: 100,
+        },
+      ]);
+      txClient.account.findMany.mockResolvedValue([
+        { id: 'acc-2', type: AccountType.SAVINGS },
+      ]);
+      txClient.account.delete.mockResolvedValue(mockAccount);
+
+      await service.remove(userId, 'acc-1');
+
+      expect(txClient.account.update).toHaveBeenCalledTimes(1);
+      expect(txClient.account.update).toHaveBeenCalledWith({
+        where: { id: 'acc-2' },
+        data: { balance: { decrement: 100 } },
+      });
+      expect(txClient.account.delete).toHaveBeenCalledWith({
+        where: { id: 'acc-1' },
+      });
+    });
+
+    it('should reverse a TRANSFER on the surviving source when the destination account is deleted', async () => {
+      // Source: Checking (acc-2, asset). Destination: Savings (acc-1) being deleted.
+      // Transfer had debited Checking -100. Deleting Savings must credit Checking +100.
+      mockPrisma.account.findFirst.mockResolvedValue({
+        ...mockAccount,
+        id: 'acc-1',
+        type: AccountType.SAVINGS,
+      });
+      txClient.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          userId,
+          accountId: 'acc-2',
+          destinationAccountId: 'acc-1',
+          type: TransactionType.TRANSFER,
+          amount: 100,
+        },
+      ]);
+      txClient.account.findMany.mockResolvedValue([
+        { id: 'acc-2', type: AccountType.CHECKING },
+      ]);
+      txClient.account.delete.mockResolvedValue(mockAccount);
+
+      await service.remove(userId, 'acc-1');
+
+      expect(txClient.account.update).toHaveBeenCalledTimes(1);
+      expect(txClient.account.update).toHaveBeenCalledWith({
+        where: { id: 'acc-2' },
+        data: { balance: { increment: 100 } },
+      });
+    });
+
+    it('should correctly reverse a TRANSFER where the counter-party is a LIABILITY (credit card paid off)', async () => {
+      // Source: Checking (acc-1, asset) being deleted. Destination: Credit (acc-2, liability).
+      // The transfer had reduced credit debt (-100 to liability balance).
+      // Deleting Checking must restore the debt (+100 to liability balance).
+      mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
+      txClient.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: 'acc-2',
+          type: TransactionType.TRANSFER,
+          amount: 100,
+        },
+      ]);
+      txClient.account.findMany.mockResolvedValue([
+        { id: 'acc-2', type: AccountType.CREDIT },
+      ]);
+      txClient.account.delete.mockResolvedValue(mockAccount);
+
+      await service.remove(userId, 'acc-1');
+
+      expect(txClient.account.update).toHaveBeenCalledWith({
+        where: { id: 'acc-2' },
+        data: { balance: { increment: 100 } },
+      });
+    });
+
+    it('should skip self-transfers where both sides are the deleted account', async () => {
+      // Edge case — no counter-party to fix.
+      mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
+      txClient.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: 'acc-1',
+          type: TransactionType.TRANSFER,
+          amount: 100,
+        },
+      ]);
+      txClient.account.findMany.mockResolvedValue([]);
+      txClient.account.delete.mockResolvedValue(mockAccount);
+
+      await service.remove(userId, 'acc-1');
+
+      expect(txClient.account.update).not.toHaveBeenCalled();
+    });
+
+    it('should reverse balances BEFORE deleting the account in the same $transaction', async () => {
+      // Ordering matters: if the account row is deleted before the update,
+      // Prisma cascade will already have wiped the transactions.
+      const callOrder: string[] = [];
+      mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
+      txClient.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: 'acc-2',
+          type: TransactionType.TRANSFER,
+          amount: 100,
+        },
+      ]);
+      txClient.account.findMany.mockResolvedValue([
+        { id: 'acc-2', type: AccountType.SAVINGS },
+      ]);
+      txClient.account.update.mockImplementation(async () => {
+        callOrder.push('update');
+      });
+      txClient.account.delete.mockImplementation(async () => {
+        callOrder.push('delete');
+        return mockAccount;
+      });
+
+      await service.remove(userId, 'acc-1');
+
+      expect(callOrder).toEqual(['update', 'delete']);
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
     });
   });
 });

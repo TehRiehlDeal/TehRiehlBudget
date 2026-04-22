@@ -41,7 +41,7 @@ const LIABILITY_TYPES: AccountType[] = [
  *     EXPENSE or transfer-out (new charge): +amount  (debt grows)
  *     INCOME or transfer-in (payment/refund): -amount  (debt shrinks)
  */
-function signedDelta(
+export function signedDelta(
   accountType: AccountType,
   role: 'primary' | 'destination',
   transactionType: TransactionType,
@@ -61,7 +61,7 @@ function signedDelta(
   return positive ? amount : -amount;
 }
 
-function asPrismaUpdate(
+export function asPrismaUpdate(
   delta: number,
 ): { increment: number } | { decrement: number } {
   return delta >= 0 ? { increment: delta } : { decrement: -delta };

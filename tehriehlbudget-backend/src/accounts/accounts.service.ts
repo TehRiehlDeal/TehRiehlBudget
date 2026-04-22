@@ -3,10 +3,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { TransactionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
+import {
+  asPrismaUpdate,
+  signedDelta,
+} from '../transactions/transactions.service';
 
 @Injectable()
 export class AccountsService {
@@ -82,7 +87,73 @@ export class AccountsService {
 
   async remove(userId: string, id: string) {
     await this.findOne(userId, id);
-    return this.prisma.account.delete({ where: { id } });
+
+    // Prisma cascades transaction rows away when the account is deleted, which
+    // bypasses TransactionsService.remove() entirely. For transfers, that
+    // leaves the surviving counter-party's balance reflecting a transfer
+    // that no longer exists. Reverse those counter-party deltas first.
+    return this.prisma.$transaction(async (tx) => {
+      const related = await tx.transaction.findMany({
+        where: {
+          userId,
+          OR: [{ accountId: id }, { destinationAccountId: id }],
+        },
+      });
+
+      const counterPartyIds = new Set<string>();
+      for (const t of related) {
+        if (t.type !== TransactionType.TRANSFER) continue;
+        if (t.accountId !== id) counterPartyIds.add(t.accountId);
+        if (t.destinationAccountId && t.destinationAccountId !== id) {
+          counterPartyIds.add(t.destinationAccountId);
+        }
+      }
+
+      const counterParties = counterPartyIds.size
+        ? await tx.account.findMany({
+            where: { userId, id: { in: Array.from(counterPartyIds) } },
+            select: { id: true, type: true },
+          })
+        : [];
+      const typeById = new Map(counterParties.map((a) => [a.id, a.type]));
+
+      for (const t of related) {
+        if (t.type !== TransactionType.TRANSFER) continue;
+        const amount = Number(t.amount);
+
+        if (
+          t.accountId === id &&
+          t.destinationAccountId &&
+          t.destinationAccountId !== id
+        ) {
+          const cpType = typeById.get(t.destinationAccountId);
+          if (cpType) {
+            await tx.account.update({
+              where: { id: t.destinationAccountId },
+              data: {
+                balance: asPrismaUpdate(
+                  -signedDelta(cpType, 'destination', t.type, amount),
+                ),
+              },
+            });
+          }
+        } else if (t.destinationAccountId === id && t.accountId !== id) {
+          const cpType = typeById.get(t.accountId);
+          if (cpType) {
+            await tx.account.update({
+              where: { id: t.accountId },
+              data: {
+                balance: asPrismaUpdate(
+                  -signedDelta(cpType, 'primary', t.type, amount),
+                ),
+              },
+            });
+          }
+        }
+      }
+
+      return tx.account.delete({ where: { id } });
+    });
   }
 
   private decryptAccount<T extends { accountNumber?: string | null }>(account: T): T {
