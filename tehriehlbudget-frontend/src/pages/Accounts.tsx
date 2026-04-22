@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Plus, Pencil, Trash2, GripVertical } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   DndContext,
   closestCenter,
@@ -179,6 +180,7 @@ export function Accounts() {
   const { accounts, loading, fetchAccounts, createAccount, updateAccount, deleteAccount, reorderAccounts } = useAccountsStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
+  const [deleting, setDeleting] = useState<Account | null>(null);
   const navigate = useNavigate();
 
   const sensors = useSensors(
@@ -240,7 +242,7 @@ export function Accounts() {
                   account={account}
                   onOpen={() => navigate(`/accounts/${account.id}`)}
                   onEdit={() => setEditing(account)}
-                  onDelete={() => deleteAccount(account.id)}
+                  onDelete={() => setDeleting(account)}
                 />
               ))}
             </div>
@@ -261,6 +263,26 @@ export function Accounts() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Delete account?"
+        description={
+          deleting ? (
+            <>
+              This will permanently delete <b>{deleting.name}</b> and all of its
+              transactions. Any transfers to or from this account will be
+              reversed on the other account's balance. This cannot be undone.
+            </>
+          ) : null
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          if (deleting) await deleteAccount(deleting.id);
+        }}
+      />
     </div>
   );
 }

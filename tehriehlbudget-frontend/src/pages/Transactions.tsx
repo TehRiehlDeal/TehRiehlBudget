@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { formatDate } from '@/lib/dates';
 
 const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
@@ -68,6 +69,7 @@ export function Transactions() {
   const [createOpen, setCreateOpen] = useState(searchParams.get('new') === '1');
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Transaction | null>(null);
 
   useEffect(() => {
     let changed = false;
@@ -232,14 +234,14 @@ export function Transactions() {
                       )}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {txn.type === 'TRANSFER' && txn.destinationAccount ? (
+                      {txn.type === 'TRANSFER' && (txn.destinationAccount || txn.destinationAccountId) ? (
                         <span className="inline-flex items-center gap-1">
-                          {txn.account?.name}
+                          {txn.account?.name ?? '(Deleted account)'}
                           <ArrowRight className="size-3 text-muted-foreground" />
-                          {txn.destinationAccount.name}
+                          {txn.destinationAccount?.name ?? '(Deleted account)'}
                         </span>
                       ) : (
-                        txn.account?.name
+                        txn.account?.name ?? '(Deleted account)'
                       )}
                     </TableCell>
                     <TableCell className="text-right text-sm font-medium">
@@ -268,7 +270,7 @@ export function Transactions() {
                         <Button variant="ghost" size="sm" onClick={() => setEditing(txn)} aria-label="Edit transaction">
                           <Pencil className="size-3" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => deleteTransaction(txn.id)} aria-label="Delete transaction">
+                        <Button variant="ghost" size="sm" onClick={() => setDeleting(txn)} aria-label="Delete transaction">
                           <Trash2 className="size-3" />
                         </Button>
                       </div>
@@ -324,6 +326,31 @@ export function Transactions() {
       <ReceiptViewer
         receiptPath={viewingReceipt}
         onClose={() => setViewingReceipt(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Delete transaction?"
+        description={
+          deleting ? (
+            <>
+              This will permanently delete the {deleting.type.toLowerCase()} of{' '}
+              <b>
+                ${Number(deleting.amount).toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                })}
+              </b>{' '}
+              ("{deleting.description}") and reverse its effect on the account
+              balance. This cannot be undone.
+            </>
+          ) : null
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          if (deleting) await deleteTransaction(deleting.id);
+        }}
       />
     </div>
   );

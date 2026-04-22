@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { TransactionForm } from '@/components/TransactionForm';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { formatDate, todayInputValue } from '@/lib/dates';
@@ -69,6 +70,10 @@ export function AccountDetail() {
 
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
+  const [deletingTxn, setDeletingTxn] = useState<Transaction | null>(null);
+  const [deletingValuation, setDeletingValuation] = useState<
+    { id: string; date: string; value: number } | null
+  >(null);
   const [history, setHistory] = useState<
     {
       date: string;
@@ -320,7 +325,7 @@ export function AccountDetail() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteValuation(v.id)}
+                        onClick={() => setDeletingValuation(v)}
                         aria-label="Delete valuation"
                       >
                         <Trash2 className="size-3" />
@@ -377,14 +382,14 @@ export function AccountDetail() {
                       )}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {txn.type === 'TRANSFER' && txn.destinationAccount ? (
+                      {txn.type === 'TRANSFER' && (txn.destinationAccount || txn.destinationAccountId) ? (
                         <span className="inline-flex items-center gap-1">
-                          {txn.account?.name}
+                          {txn.account?.name ?? '(Deleted account)'}
                           <ArrowRight className="size-3 text-muted-foreground" />
-                          {txn.destinationAccount.name}
+                          {txn.destinationAccount?.name ?? '(Deleted account)'}
                         </span>
                       ) : (
-                        txn.account?.name
+                        txn.account?.name ?? '(Deleted account)'
                       )}
                     </TableCell>
                     <TableCell className="text-right text-sm font-medium">
@@ -413,7 +418,7 @@ export function AccountDetail() {
                         <Button variant="ghost" size="sm" onClick={() => setEditing(txn)} aria-label="Edit transaction">
                           <Pencil className="size-3" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => deleteTransaction(txn.id)} aria-label="Delete transaction">
+                        <Button variant="ghost" size="sm" onClick={() => setDeletingTxn(txn)} aria-label="Delete transaction">
                           <Trash2 className="size-3" />
                         </Button>
                       </div>
@@ -508,6 +513,52 @@ export function AccountDetail() {
       <ReceiptViewer
         receiptPath={viewingReceipt}
         onClose={() => setViewingReceipt(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deletingTxn}
+        onOpenChange={(open) => !open && setDeletingTxn(null)}
+        title="Delete transaction?"
+        description={
+          deletingTxn ? (
+            <>
+              This will permanently delete the{' '}
+              {deletingTxn.type.toLowerCase()} of{' '}
+              <b>
+                ${Number(deletingTxn.amount).toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                })}
+              </b>{' '}
+              ("{deletingTxn.description}") and reverse its effect on the
+              account balance. This cannot be undone.
+            </>
+          ) : null
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          if (deletingTxn) await deleteTransaction(deletingTxn.id);
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!deletingValuation}
+        onOpenChange={(open) => !open && setDeletingValuation(null)}
+        title="Delete valuation?"
+        description={
+          deletingValuation ? (
+            <>
+              This will permanently delete the valuation of{' '}
+              <b>{formatCurrency(Number(deletingValuation.value))}</b> from{' '}
+              <b>{formatDate(deletingValuation.date)}</b>. This cannot be undone.
+            </>
+          ) : null
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          if (deletingValuation) await handleDeleteValuation(deletingValuation.id);
+        }}
       />
     </div>
   );
