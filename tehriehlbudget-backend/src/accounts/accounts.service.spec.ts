@@ -3,6 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 import { AccountType, TransactionType } from '@prisma/client';
 
 jest.mock('@prisma/client', () => ({
@@ -18,6 +19,12 @@ jest.mock('@prisma/client', () => ({
     RETIREMENT: 'RETIREMENT',
   },
   TransactionType: { INCOME: 'INCOME', EXPENSE: 'EXPENSE', TRANSFER: 'TRANSFER' },
+  EntityType: {
+    TRANSACTION: 'TRANSACTION',
+    ACCOUNT: 'ACCOUNT',
+    ACCOUNT_VALUATION: 'ACCOUNT_VALUATION',
+  },
+  ActivityAction: { CREATE: 'CREATE', UPDATE: 'UPDATE', DELETE: 'DELETE' },
 }));
 
 describe('AccountsService', () => {
@@ -67,6 +74,10 @@ describe('AccountsService', () => {
     decryptField: jest.fn((v: string | null) => v),
   };
 
+  const mockActivityLog = {
+    log: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     txClient = makeTxClient();
@@ -80,6 +91,7 @@ describe('AccountsService', () => {
         AccountsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EncryptionService, useValue: mockEncryption },
+        { provide: ActivityLogService, useValue: mockActivityLog },
       ],
     }).compile();
 
@@ -417,6 +429,138 @@ describe('AccountsService', () => {
 
       expect(callOrder).toEqual(['update', 'delete']);
       expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('activity logging', () => {
+    it('logs CREATE for a new account', async () => {
+      mockPrisma.account.create.mockResolvedValue({ ...mockAccount, id: 'acc-new' });
+
+      await service.create(userId, {
+        name: 'Main Checking',
+        type: AccountType.CHECKING,
+        balance: 5000,
+      });
+
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          entityType: 'ACCOUNT',
+          entityId: 'acc-new',
+          action: 'CREATE',
+          accountId: 'acc-new',
+        }),
+      );
+    });
+
+    it('logs UPDATE for an account edit', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
+      mockPrisma.account.update.mockResolvedValue({ ...mockAccount, name: 'Renamed' });
+
+      await service.update(userId, 'acc-1', { name: 'Renamed' });
+
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          entityType: 'ACCOUNT',
+          entityId: 'acc-1',
+          action: 'UPDATE',
+          accountId: 'acc-1',
+        }),
+      );
+    });
+
+    it('logs DELETE for the account AND a DELETE per cascaded transaction', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
+      txClient.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          categoryId: null,
+          type: TransactionType.EXPENSE,
+          amount: 50,
+          description: 'Coffee',
+          date: new Date('2026-04-01'),
+        },
+        {
+          id: 't2',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: 'acc-2',
+          categoryId: null,
+          type: TransactionType.TRANSFER,
+          amount: 100,
+          description: 'Move money',
+          date: new Date('2026-04-02'),
+        },
+      ]);
+      txClient.account.findMany.mockResolvedValue([
+        { id: 'acc-2', type: AccountType.SAVINGS },
+      ]);
+      txClient.account.delete.mockResolvedValue(mockAccount);
+
+      await service.remove(userId, 'acc-1');
+
+      // Account-level DELETE log
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: 'ACCOUNT',
+          entityId: 'acc-1',
+          action: 'DELETE',
+        }),
+      );
+      // One DELETE log per cascaded transaction
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: 'TRANSACTION',
+          entityId: 't1',
+          action: 'DELETE',
+        }),
+      );
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: 'TRANSACTION',
+          entityId: 't2',
+          action: 'DELETE',
+        }),
+      );
+    });
+
+    it('logs DELETE entries BEFORE account.delete (so the audit trail survives the cascade)', async () => {
+      const callOrder: string[] = [];
+      mockPrisma.account.findFirst.mockResolvedValue(mockAccount);
+      txClient.transaction.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          userId,
+          accountId: 'acc-1',
+          destinationAccountId: null,
+          categoryId: null,
+          type: TransactionType.EXPENSE,
+          amount: 50,
+          description: 'Coffee',
+          date: new Date('2026-04-01'),
+        },
+      ]);
+      txClient.account.findMany.mockResolvedValue([]);
+      mockActivityLog.log.mockImplementation(async (input: any) => {
+        callOrder.push(`log:${input.entityType}:${input.action}`);
+      });
+      txClient.account.delete.mockImplementation(async () => {
+        callOrder.push('delete:account');
+        return mockAccount;
+      });
+
+      await service.remove(userId, 'acc-1');
+
+      // All log calls must precede the account.delete
+      const deleteIdx = callOrder.indexOf('delete:account');
+      expect(deleteIdx).toBeGreaterThan(0);
+      callOrder.slice(0, deleteIdx).forEach((entry) => {
+        expect(entry.startsWith('log:')).toBe(true);
+      });
     });
   });
 });

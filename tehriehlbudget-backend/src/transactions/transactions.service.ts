@@ -5,9 +5,18 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
-import { TransactionType, AccountType, Prisma } from '@prisma/client';
+import {
+  TransactionType,
+  AccountType,
+  EntityType,
+  ActivityAction,
+  Prisma,
+} from '@prisma/client';
+
+export const EXPORT_ROW_CAP = 10000;
 
 export interface TransactionFilters {
   accountId?: string;
@@ -17,6 +26,41 @@ export interface TransactionFilters {
   endDate?: string;
   page?: number;
   limit?: number;
+  all?: boolean | string;
+}
+
+function transactionSnapshot(t: {
+  id: string;
+  amount: any;
+  type: TransactionType;
+  accountId: string;
+  destinationAccountId: string | null;
+  categoryId: string | null;
+  description: string;
+  date: Date;
+}) {
+  return {
+    id: t.id,
+    amount: Number(t.amount),
+    type: t.type,
+    accountId: t.accountId,
+    destinationAccountId: t.destinationAccountId,
+    categoryId: t.categoryId,
+    description: t.description,
+    date: t.date instanceof Date ? t.date.toISOString() : t.date,
+  };
+}
+
+function transactionSummary(t: {
+  amount: any;
+  type: TransactionType;
+  description: string;
+}): string {
+  const amount = Number(t.amount).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `$${amount} ${t.type} — ${t.description}`;
 }
 
 const txnInclude = {
@@ -84,6 +128,7 @@ export class TransactionsService {
   constructor(
     private prisma: PrismaService,
     private encryption: EncryptionService,
+    private activityLog: ActivityLogService,
   ) {}
 
   async create(userId: string, dto: CreateTransactionDto) {
@@ -152,6 +197,18 @@ export class TransactionsService {
         });
       }
 
+      await this.activityLog.log({
+        userId,
+        entityType: EntityType.TRANSACTION,
+        entityId: created.id,
+        action: ActivityAction.CREATE,
+        accountId: created.accountId,
+        destinationAccountId: created.destinationAccountId,
+        summary: transactionSummary(created),
+        snapshot: transactionSnapshot(created),
+        tx,
+      });
+
       return created;
     });
     return this.decryptTransaction(txn);
@@ -159,6 +216,7 @@ export class TransactionsService {
 
   async findAll(userId: string, filters: TransactionFilters) {
     const { accountId, categoryId, type, startDate, endDate } = filters;
+    const all = filters.all === true || filters.all === 'true';
     const page = Number(filters.page) || 1;
     const limit = Number(filters.limit) || 20;
 
@@ -178,18 +236,29 @@ export class TransactionsService {
       if (endDate) (where.date as any).lte = new Date(endDate);
     }
 
+    const findManyArgs: Prisma.TransactionFindManyArgs = {
+      where,
+      include: txnInclude,
+      orderBy: { date: 'desc' },
+    };
+    if (all) {
+      findManyArgs.take = EXPORT_ROW_CAP;
+    } else {
+      findManyArgs.skip = (page - 1) * limit;
+      findManyArgs.take = limit;
+    }
+
     const [data, total] = await Promise.all([
-      this.prisma.transaction.findMany({
-        where,
-        include: txnInclude,
-        orderBy: { date: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
+      this.prisma.transaction.findMany(findManyArgs),
       this.prisma.transaction.count({ where }),
     ]);
 
-    return { data: data.map((t) => this.decryptTransaction(t)), total, page, limit };
+    return {
+      data: data.map((t) => this.decryptTransaction(t)),
+      total,
+      page: all ? 1 : page,
+      limit: all ? data.length : limit,
+    };
   }
 
   async findOne(userId: string, id: string) {
@@ -312,6 +381,18 @@ export class TransactionsService {
         include: txnInclude,
       });
 
+      await this.activityLog.log({
+        userId,
+        entityType: EntityType.TRANSACTION,
+        entityId: updated.id,
+        action: ActivityAction.UPDATE,
+        accountId: updated.accountId,
+        destinationAccountId: updated.destinationAccountId,
+        summary: transactionSummary(updated),
+        snapshot: transactionSnapshot(updated),
+        tx,
+      });
+
       // Apply the new transaction's effect
       if (balanceAffected) {
         const newPrimaryType = typeById.get(updated.accountId);
@@ -420,6 +501,18 @@ export class TransactionsService {
           });
         }
       }
+
+      await this.activityLog.log({
+        userId,
+        entityType: EntityType.TRANSACTION,
+        entityId: existing.id,
+        action: ActivityAction.DELETE,
+        accountId: existing.accountId,
+        destinationAccountId: existing.destinationAccountId,
+        summary: transactionSummary(existing),
+        snapshot: transactionSnapshot(existing),
+        tx,
+      });
 
       return tx.transaction.delete({ where: { id } });
     });

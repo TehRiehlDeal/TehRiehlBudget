@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { ValuationsService } from './valuations.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 jest.mock('@prisma/client', () => ({
   PrismaClient: class {},
@@ -15,6 +16,12 @@ jest.mock('@prisma/client', () => ({
     INVESTMENT: 'INVESTMENT',
     RETIREMENT: 'RETIREMENT',
   },
+  EntityType: {
+    TRANSACTION: 'TRANSACTION',
+    ACCOUNT: 'ACCOUNT',
+    ACCOUNT_VALUATION: 'ACCOUNT_VALUATION',
+  },
+  ActivityAction: { CREATE: 'CREATE', UPDATE: 'UPDATE', DELETE: 'DELETE' },
 }));
 
 describe('ValuationsService', () => {
@@ -36,12 +43,17 @@ describe('ValuationsService', () => {
     },
   };
 
+  const mockActivityLog = {
+    log: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ValuationsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: ActivityLogService, useValue: mockActivityLog },
       ],
     }).compile();
 
@@ -179,6 +191,63 @@ describe('ValuationsService', () => {
     it('rejects deleting a valuation owned by another user', async () => {
       mockPrisma.accountValuation.findFirst.mockResolvedValue(null);
       await expect(service.remove(userId, 'stranger-v')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('activity logging', () => {
+    it('logs CREATE on a new valuation', async () => {
+      mockPrisma.account.findFirst.mockResolvedValue({ id: accountId });
+      mockPrisma.accountValuation.create.mockResolvedValue({
+        id: 'v-1',
+        accountId,
+        date: new Date('2026-04-17'),
+        value: 100,
+      });
+      mockPrisma.accountValuation.findFirst.mockResolvedValue(null);
+
+      await service.create(userId, accountId, { date: '2026-04-17', value: 100 });
+
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          entityType: 'ACCOUNT_VALUATION',
+          entityId: 'v-1',
+          action: 'CREATE',
+          accountId,
+        }),
+      );
+    });
+
+    it('logs DELETE before removing the valuation', async () => {
+      const callOrder: string[] = [];
+      mockPrisma.accountValuation.findFirst.mockResolvedValueOnce({
+        id: 'v-1',
+        accountId,
+        value: 300,
+        date: new Date('2026-04-17'),
+        account: { userId },
+      });
+      mockPrisma.accountValuation.findFirst.mockResolvedValueOnce(null);
+      mockActivityLog.log.mockImplementation(async () => {
+        callOrder.push('log');
+      });
+      mockPrisma.accountValuation.delete.mockImplementation(async () => {
+        callOrder.push('delete');
+        return {};
+      });
+
+      await service.remove(userId, 'v-1');
+
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          entityType: 'ACCOUNT_VALUATION',
+          entityId: 'v-1',
+          action: 'DELETE',
+          accountId,
+        }),
+      );
+      expect(callOrder).toEqual(['log', 'delete']);
     });
   });
 });

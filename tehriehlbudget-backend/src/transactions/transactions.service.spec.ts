@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 import { TransactionType, AccountType } from '@prisma/client';
 
 jest.mock('@prisma/client', () => ({
@@ -18,6 +19,12 @@ jest.mock('@prisma/client', () => ({
     INVESTMENT: 'INVESTMENT',
     RETIREMENT: 'RETIREMENT',
   },
+  EntityType: {
+    TRANSACTION: 'TRANSACTION',
+    ACCOUNT: 'ACCOUNT',
+    ACCOUNT_VALUATION: 'ACCOUNT_VALUATION',
+  },
+  ActivityAction: { CREATE: 'CREATE', UPDATE: 'UPDATE', DELETE: 'DELETE' },
   Prisma: {},
 }));
 
@@ -72,6 +79,10 @@ describe('TransactionsService', () => {
     decryptField: jest.fn((v: string | null) => v),
   };
 
+  const mockActivityLog = {
+    log: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     txClient = makeTxClient();
@@ -82,6 +93,7 @@ describe('TransactionsService', () => {
         TransactionsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EncryptionService, useValue: mockEncryption },
+        { provide: ActivityLogService, useValue: mockActivityLog },
       ],
     }).compile();
 
@@ -388,6 +400,107 @@ describe('TransactionsService', () => {
     it('should throw NotFoundException when deleting a missing transaction', async () => {
       mockPrisma.transaction.findFirst.mockResolvedValue(null);
       await expect(service.remove(userId, 'nope')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('activity logging', () => {
+    it('logs CREATE inside the same $transaction', async () => {
+      mockPrisma.account.findMany.mockResolvedValue([
+        { id: 'acc-1', type: AccountType.CHECKING },
+      ]);
+      txClient.transaction.create.mockResolvedValue({
+        ...baseTxn,
+        id: 'txn-new',
+        type: TransactionType.EXPENSE,
+        amount: 42.5,
+      });
+
+      await service.create(userId, {
+        accountId: 'acc-1',
+        amount: 42.5,
+        type: TransactionType.EXPENSE,
+        description: 'Grocery run',
+        date: '2026-04-01',
+      });
+
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          entityType: 'TRANSACTION',
+          entityId: 'txn-new',
+          action: 'CREATE',
+          accountId: 'acc-1',
+          tx: txClient,
+        }),
+      );
+    });
+
+    it('logs UPDATE on edit', async () => {
+      const existing = {
+        ...baseTxn,
+        type: TransactionType.EXPENSE,
+        amount: 100,
+      };
+      mockPrisma.transaction.findFirst.mockResolvedValue(existing);
+      mockPrisma.account.findMany.mockResolvedValue([
+        { id: 'acc-1', type: AccountType.CHECKING },
+      ]);
+      txClient.transaction.update.mockResolvedValue({ ...existing, amount: 150 });
+
+      await service.update(userId, 'txn-1', { amount: 150 });
+
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          entityType: 'TRANSACTION',
+          entityId: 'txn-1',
+          action: 'UPDATE',
+          tx: txClient,
+        }),
+      );
+    });
+
+    it('logs DELETE before tx.transaction.delete', async () => {
+      const callOrder: string[] = [];
+      const existing = { ...baseTxn, type: TransactionType.EXPENSE, amount: 100 };
+      mockPrisma.transaction.findFirst.mockResolvedValue(existing);
+      txClient.account.findMany.mockResolvedValue([
+        { id: 'acc-1', type: AccountType.CHECKING },
+      ]);
+      mockActivityLog.log.mockImplementation(async () => {
+        callOrder.push('log');
+      });
+      txClient.transaction.delete.mockImplementation(async () => {
+        callOrder.push('delete');
+        return existing;
+      });
+
+      await service.remove(userId, 'txn-1');
+
+      expect(mockActivityLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          entityType: 'TRANSACTION',
+          entityId: 'txn-1',
+          action: 'DELETE',
+          tx: txClient,
+          snapshot: expect.objectContaining({ id: 'txn-1', amount: 100 }),
+        }),
+      );
+      expect(callOrder).toEqual(['log', 'delete']);
+    });
+  });
+
+  describe('findAll with all=true', () => {
+    it('omits skip/take when all=true and caps the row count', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([]);
+      mockPrisma.transaction.count.mockResolvedValue(0);
+
+      await service.findAll(userId, { all: true } as any);
+
+      const call = mockPrisma.transaction.findMany.mock.calls[0][0];
+      expect(call.skip).toBeUndefined();
+      expect(call.take).toBe(10000);
     });
   });
 });

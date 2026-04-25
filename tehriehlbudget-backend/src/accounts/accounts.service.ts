@@ -3,9 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { TransactionType } from '@prisma/client';
+import { TransactionType, EntityType, ActivityAction } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import {
@@ -13,11 +14,58 @@ import {
   signedDelta,
 } from '../transactions/transactions.service';
 
+function accountSnapshot(a: {
+  id: string;
+  name: string;
+  type: any;
+  balance: any;
+  institution: string | null;
+}) {
+  return {
+    id: a.id,
+    name: a.name,
+    type: a.type,
+    balance: Number(a.balance),
+    institution: a.institution,
+  };
+}
+
+function txnSnapshot(t: {
+  id: string;
+  amount: any;
+  type: any;
+  accountId: string;
+  destinationAccountId: string | null;
+  categoryId: string | null;
+  description: string;
+  date: Date;
+}) {
+  return {
+    id: t.id,
+    amount: Number(t.amount),
+    type: t.type,
+    accountId: t.accountId,
+    destinationAccountId: t.destinationAccountId,
+    categoryId: t.categoryId,
+    description: t.description,
+    date: t.date instanceof Date ? t.date.toISOString() : t.date,
+  };
+}
+
+function txnSummary(t: { amount: any; type: any; description: string }): string {
+  const amount = Number(t.amount).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `$${amount} ${t.type} — ${t.description}`;
+}
+
 @Injectable()
 export class AccountsService {
   constructor(
     private prisma: PrismaService,
     private encryption: EncryptionService,
+    private activityLog: ActivityLogService,
   ) {}
 
   async create(userId: string, dto: CreateAccountDto) {
@@ -32,6 +80,15 @@ export class AccountsService {
     });
     data.sortOrder = (max._max.sortOrder ?? -1) + 1;
     const account = await this.prisma.account.create({ data });
+    await this.activityLog.log({
+      userId,
+      entityType: EntityType.ACCOUNT,
+      entityId: account.id,
+      action: ActivityAction.CREATE,
+      accountId: account.id,
+      summary: account.name,
+      snapshot: accountSnapshot(account),
+    });
     return this.decryptAccount(account);
   }
 
@@ -82,11 +139,20 @@ export class AccountsService {
       data.accountNumber = this.encryption.encryptField(data.accountNumber);
     }
     const account = await this.prisma.account.update({ where: { id }, data });
+    await this.activityLog.log({
+      userId,
+      entityType: EntityType.ACCOUNT,
+      entityId: account.id,
+      action: ActivityAction.UPDATE,
+      accountId: account.id,
+      summary: account.name,
+      snapshot: accountSnapshot(account),
+    });
     return this.decryptAccount(account);
   }
 
   async remove(userId: string, id: string) {
-    await this.findOne(userId, id);
+    const existing = await this.findOne(userId, id);
 
     // Prisma cascades transaction rows away when the account is deleted, which
     // bypasses TransactionsService.remove() entirely. For transfers, that
@@ -151,6 +217,33 @@ export class AccountsService {
           }
         }
       }
+
+      // Snapshot every cascaded transaction BEFORE delete wipes them, so the
+      // audit trail survives the cascade.
+      for (const t of related) {
+        await this.activityLog.log({
+          userId,
+          entityType: EntityType.TRANSACTION,
+          entityId: t.id,
+          action: ActivityAction.DELETE,
+          accountId: t.accountId,
+          destinationAccountId: t.destinationAccountId,
+          summary: txnSummary(t),
+          snapshot: txnSnapshot(t),
+          tx,
+        });
+      }
+
+      await this.activityLog.log({
+        userId,
+        entityType: EntityType.ACCOUNT,
+        entityId: id,
+        action: ActivityAction.DELETE,
+        accountId: id,
+        summary: existing.name,
+        snapshot: accountSnapshot(existing),
+        tx,
+      });
 
       return tx.account.delete({ where: { id } });
     });

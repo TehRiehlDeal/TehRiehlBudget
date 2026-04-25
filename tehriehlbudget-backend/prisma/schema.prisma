@@ -18,6 +18,7 @@ model User {
   accounts     Account[]
   transactions Transaction[]
   categories   Category[]
+  activityLogs ActivityLog[]
   @@map("users")
 }
 
@@ -108,4 +109,37 @@ model Category {
 
   @@unique([userId, name])
   @@map("categories")
+}
+
+enum EntityType {
+  TRANSACTION
+  ACCOUNT
+  ACCOUNT_VALUATION
+}
+
+enum ActivityAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+model ActivityLog {
+  id                   String         @id @default(uuid())
+  userId               String         @map("user_id")
+  entityType           EntityType     @map("entity_type")
+  entityId             String         @map("entity_id")
+  action               ActivityAction
+  accountId            String?        @map("account_id")
+  destinationAccountId String?        @map("destination_account_id")
+  summary              String?
+  snapshot             Json?
+  createdAt            DateTime       @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, accountId, createdAt])
+  @@index([userId, destinationAccountId, createdAt])
+  @@index([userId, entityType, createdAt])
+  @@map("activity_logs")
 }
