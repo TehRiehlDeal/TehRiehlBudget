@@ -145,6 +145,12 @@ export class AdvisorService {
     current: MonthContext;
     previous: MonthContext;
   }): string {
+    const fmt = (n: number) =>
+      Number(n).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
     const savingsRate = (s: MonthContext['summary']) =>
       s.income > 0
         ? ((1 - s.expense / s.income) * 100).toFixed(1)
@@ -153,38 +159,49 @@ export class AdvisorService {
     const renderCats = (cats: MonthContext['topCategories']) =>
       cats.length
         ? cats
-            .map((c) => `  - ${c.name ?? 'Uncategorized'}: $${c.amount}`)
+            .map((c) => `  - ${c.name ?? 'Uncategorized'}: $${fmt(c.amount)}`)
             .join('\n')
         : '  (none yet)';
 
     const cur = ctx.current.summary;
     const prev = ctx.previous.summary;
+    const curSaved = cur.income - cur.expense;
+    const prevSaved = prev.income - prev.expense;
     const expenseDelta = Number((cur.expense - prev.expense).toFixed(2));
     const savedMore = -expenseDelta;
 
     const trendLine =
       prev.expense === 0
         ? 'No prior-month data to compare yet.'
-        : savedMore >= 0
-          ? `Spending is down $${savedMore.toFixed(2)} vs last month — nice trend.`
-          : `Spending is up $${Math.abs(savedMore).toFixed(2)} vs last month.`;
+        : savedMore > 0
+          ? `Spending is down $${fmt(savedMore)} vs last month — nice trend.`
+          : savedMore < 0
+            ? `Spending is up $${fmt(Math.abs(savedMore))} vs last month.`
+            : 'Spending is flat vs last month.';
 
     return `You're a friendly financial buddy — talk like a supportive friend, not a corporate advisor. Lead with the single most important thing the user should know: either a specific win worth celebrating or a specific concern worth addressing. Reference exact dollar amounts from the numbers below, compare this month to last month when the numbers tell a story, and keep replies conversational and short (no rigid numbered lists unless the user asks for one). Use first person ("I see...", "you're...").
 
-Here's the user's current financial snapshot.
+Rules about the numbers:
+- Use only the figures listed below. Do not invent equations, do not derive new amounts by doing arithmetic on values from different sections, and do not append parenthetical math like "($X - $Y)" to your sentences. If you cite a dollar figure, it must appear verbatim below.
+- "Standing balance" numbers are point-in-time totals (what the user has and owes right now). They are NOT this month's savings or activity. Never subtract them or use them as monthly flow.
+- "This month" numbers are flow — money that moved during the current calendar month. Use "Saved this month" when talking about how much was set aside.
 
-This month so far:
-- Net worth: $${cur.netWorth}
-- Total debt: $${Math.abs(cur.totalDebt)}
-- Income: $${cur.income}
-- Expenses: $${cur.expense}
+Standing balance (point-in-time, not flow):
+- Net worth: $${fmt(cur.netWorth)}
+- Total debt: $${fmt(Math.abs(cur.totalDebt))}
+
+This month so far (flow):
+- Income: $${fmt(cur.income)}
+- Expenses: $${fmt(cur.expense)}
+- Saved this month: $${fmt(curSaved)}
 - Savings rate: ${savingsRate(cur)}%
 - Top spending categories:
 ${renderCats(ctx.current.topCategories)}
 
-Last month:
-- Income: $${prev.income}
-- Expenses: $${prev.expense}
+Last month (flow):
+- Income: $${fmt(prev.income)}
+- Expenses: $${fmt(prev.expense)}
+- Saved last month: $${fmt(prevSaved)}
 - Savings rate: ${savingsRate(prev)}%
 - Top spending categories:
 ${renderCats(ctx.previous.topCategories)}

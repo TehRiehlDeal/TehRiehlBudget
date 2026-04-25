@@ -163,6 +163,61 @@ describe('AdvisorService', () => {
       expect(systemMessage.content).toMatch(/last month/i);
     });
 
+    it('pre-computes "Saved this month" so the model does not have to derive it', async () => {
+      // Mock returns income 5000 / expense 3200 → saved = 1,800
+      mockOllamaOnce('opening analysis');
+      await service.getAdvice(userId);
+
+      const body = getFetchBody();
+      const systemMessage = body.messages.find((m: any) => m.role === 'system');
+      expect(systemMessage.content).toMatch(/saved this month: \$1,800\.00/i);
+      expect(systemMessage.content).toMatch(/saved last month: \$1,800\.00/i);
+    });
+
+    it('separates point-in-time standing balance from monthly flow numbers', async () => {
+      mockOllamaOnce('opening analysis');
+      await service.getAdvice(userId);
+
+      const body = getFetchBody();
+      const systemMessage = body.messages.find((m: any) => m.role === 'system');
+      const content = systemMessage.content as string;
+
+      // Headers for each section exist
+      expect(content).toMatch(/standing balance/i);
+      expect(content).toMatch(/this month/i);
+
+      // Standing-balance figures appear before the monthly-flow figures so the
+      // model can't conflate them as "savings = netWorth - totalDebt".
+      const standingIdx = content.search(/standing balance/i);
+      const flowIdx = content.search(/this month so far/i);
+      expect(standingIdx).toBeGreaterThan(-1);
+      expect(flowIdx).toBeGreaterThan(standingIdx);
+    });
+
+    it('instructs the model not to invent equations or derive new amounts', async () => {
+      mockOllamaOnce('opening analysis');
+      await service.getAdvice(userId);
+
+      const body = getFetchBody();
+      const systemMessage = body.messages.find((m: any) => m.role === 'system');
+      // Guardrail against the bug where the model showed bogus "($X - $Y)" math
+      // in its narrative. Wording can shift, but the keywords must remain.
+      expect(systemMessage.content).toMatch(/do not (?:invent|derive)/i);
+      expect(systemMessage.content).toMatch(/equation|arithmetic|math/i);
+    });
+
+    it('formats currency with thousands separators for readability', async () => {
+      // Mock totals: income 5000, expense 3200, netWorth 15000 → "$15,000.00".
+      mockOllamaOnce('opening analysis');
+      await service.getAdvice(userId);
+
+      const body = getFetchBody();
+      const systemMessage = body.messages.find((m: any) => m.role === 'system');
+      expect(systemMessage.content).toMatch(/\$15,000\.00/);
+      expect(systemMessage.content).toMatch(/\$5,000\.00/);
+      expect(systemMessage.content).toMatch(/\$3,200\.00/);
+    });
+
     it('should throw on Ollama failure', async () => {
       mockFetch.mockResolvedValue({
         ok: false,
