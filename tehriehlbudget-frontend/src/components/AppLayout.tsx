@@ -9,6 +9,7 @@ import {
   Wallet,
   ArrowLeftRight,
   Tags,
+  History,
   LogOut,
   Menu,
   X,
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/accounts', label: 'Accounts', icon: Wallet },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/categories', label: 'Categories', icon: Tags },
+  { to: '/activity', label: 'History', icon: History },
 ];
 
 function ThemeToggle() {

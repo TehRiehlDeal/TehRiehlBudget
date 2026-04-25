@@ -35,6 +35,7 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
+  Download,
   Trash2,
   Paperclip,
   Pencil,
@@ -43,6 +44,7 @@ import {
 import { TransactionForm } from '@/components/TransactionForm';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ExportTransactionsDialog } from '@/components/ExportTransactionsDialog';
 import { formatDate } from '@/lib/dates';
 
 const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
@@ -70,6 +72,7 @@ export function Transactions() {
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Transaction | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     let changed = false;
@@ -118,22 +121,27 @@ export function Transactions() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Transactions</h1>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger render={<Button />}>
-            <Plus className="mr-2 size-4" /> Add Transaction
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Transaction</DialogTitle></DialogHeader>
-            <TransactionForm
-              accounts={accounts}
-              categories={categories}
-              onSubmit={handleCreate}
-              onCancel={() => setCreateOpen(false)}
-            />
-          </DialogContent>
-        </Dialog>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setExportOpen(true)}>
+            <Download className="mr-2 size-4" /> Export CSV
+          </Button>
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger render={<Button />}>
+              <Plus className="mr-2 size-4" /> Add Transaction
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>New Transaction</DialogTitle></DialogHeader>
+              <TransactionForm
+                accounts={accounts}
+                categories={categories}
+                onSubmit={handleCreate}
+                onCancel={() => setCreateOpen(false)}
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Filters */}
@@ -351,6 +359,12 @@ export function Transactions() {
         onConfirm={async () => {
           if (deleting) await deleteTransaction(deleting.id);
         }}
+      />
+
+      <ExportTransactionsDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        baseFilters={filters}
       />
     </div>
   );

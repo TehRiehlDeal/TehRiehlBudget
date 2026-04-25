@@ -34,6 +34,7 @@ interface TransactionsState {
   page: number;
   loading: boolean;
   fetchTransactions: (filters?: TransactionFilters, page?: number) => Promise<void>;
+  fetchAllTransactions: (filters?: TransactionFilters) => Promise<Transaction[]>;
   createTransaction: (data: Partial<Transaction>) => Promise<void>;
   updateTransaction: (id: string, data: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
@@ -67,6 +68,18 @@ export const useTransactionsStore = create<TransactionsState>((set) => ({
       page: result.page,
       loading: false,
     });
+  },
+
+  fetchAllTransactions: async (filters = {}) => {
+    const params = new URLSearchParams();
+    params.set('all', 'true');
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, String(value));
+    });
+    const result = await api.get<{ data: Transaction[] }>(
+      `/transactions?${params.toString()}`,
+    );
+    return result.data;
   },
 
   createTransaction: async (data) => {

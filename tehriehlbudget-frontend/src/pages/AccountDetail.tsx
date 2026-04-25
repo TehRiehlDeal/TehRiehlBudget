@@ -25,6 +25,8 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Download,
+  History as HistoryIcon,
   Paperclip,
   Pencil,
   Trash2,
@@ -32,6 +34,7 @@ import {
 import { TransactionForm } from '@/components/TransactionForm';
 import { ReceiptViewer } from '@/components/ReceiptViewer';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ExportTransactionsDialog } from '@/components/ExportTransactionsDialog';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { formatDate, todayInputValue } from '@/lib/dates';
@@ -74,6 +77,7 @@ export function AccountDetail() {
   const [deletingValuation, setDeletingValuation] = useState<
     { id: string; date: string; value: number } | null
   >(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [history, setHistory] = useState<
     {
       date: string;
@@ -204,10 +208,26 @@ export function AccountDetail() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate('/accounts')}>
           <ArrowLeft className="mr-1 size-4" /> Back
         </Button>
+        <div className="flex flex-1 justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/activity?accountId=${id}`)}
+          >
+            <HistoryIcon className="mr-1 size-4" /> History
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setExportOpen(true)}
+          >
+            <Download className="mr-1 size-4" /> Export CSV
+          </Button>
+        </div>
       </div>
 
       {account ? (
@@ -559,6 +579,13 @@ export function AccountDetail() {
         onConfirm={async () => {
           if (deletingValuation) await handleDeleteValuation(deletingValuation.id);
         }}
+      />
+
+      <ExportTransactionsDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        baseFilters={{ accountId: id }}
+        accountName={account?.name}
       />
     </div>
   );

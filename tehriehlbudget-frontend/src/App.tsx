@@ -11,6 +11,7 @@ import { Accounts } from '@/pages/Accounts';
 import { AccountDetail } from '@/pages/AccountDetail';
 import { Transactions } from '@/pages/Transactions';
 import { Categories } from '@/pages/Categories';
+import { Activity } from '@/pages/Activity';
 import { PWAUpdatePrompt } from '@/components/PWAUpdatePrompt';
 
 function App() {
@@ -40,6 +41,7 @@ function App() {
           <Route path="/accounts/:id" element={<AccountDetail />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/categories" element={<Categories />} />
+          <Route path="/activity" element={<Activity />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
