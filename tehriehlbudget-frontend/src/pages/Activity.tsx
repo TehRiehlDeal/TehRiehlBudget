@@ -8,6 +8,7 @@ import {
   type ActivityAction,
 } from '@/stores/activity';
 import { useAccountsStore } from '@/stores/accounts';
+import { useCategoriesStore } from '@/stores/categories';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -27,6 +28,7 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { formatDate } from '@/lib/dates';
 
 const ENTITY_TYPES: { value: EntityType; label: string }[] = [
   { value: 'TRANSACTION', label: 'Transaction' },
@@ -52,10 +54,112 @@ function entityLabel(type: EntityType): string {
   return ENTITY_TYPES.find((e) => e.value === type)?.label ?? type;
 }
 
+function formatCurrency(value: number): string {
+  const abs = Math.abs(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return value < 0 ? `-$${abs}` : `$${abs}`;
+}
+
+function titleCase(s: string): string {
+  return s.charAt(0) + s.slice(1).toLowerCase();
+}
+
+function DetailField({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="text-sm text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function ActivityDetail({
+  entry,
+  resolveAccount,
+  resolveCategory,
+}: {
+  entry: ActivityLogEntry;
+  resolveAccount: (id: string | null | undefined) => string;
+  resolveCategory: (id: string | null | undefined) => string;
+}) {
+  const snap = (entry.snapshot ?? {}) as Record<string, unknown>;
+
+  if (!entry.snapshot) {
+    return (
+      <p className="text-sm text-muted-foreground">No additional details recorded.</p>
+    );
+  }
+
+  if (entry.entityType === 'TRANSACTION') {
+    const type = String(snap.type ?? '');
+    const amount = Number(snap.amount ?? 0);
+    return (
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <DetailField label="Date" value={snap.date ? formatDate(String(snap.date)) : '—'} />
+        <DetailField label="Type" value={type ? titleCase(type) : '—'} />
+        <DetailField label="Amount" value={formatCurrency(amount)} />
+        <DetailField
+          label="Description"
+          value={(snap.description as string) || '—'}
+        />
+        <DetailField label="Account" value={resolveAccount(snap.accountId as string)} />
+        {snap.destinationAccountId ? (
+          <DetailField
+            label="Destination Account"
+            value={resolveAccount(snap.destinationAccountId as string)}
+          />
+        ) : null}
+        {snap.categoryId ? (
+          <DetailField label="Category" value={resolveCategory(snap.categoryId as string)} />
+        ) : null}
+      </div>
+    );
+  }
+
+  if (entry.entityType === 'ACCOUNT') {
+    const balance = Number(snap.balance ?? 0);
+    const type = String(snap.type ?? '');
+    return (
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <DetailField label="Name" value={(snap.name as string) || '—'} />
+        <DetailField label="Type" value={type ? titleCase(type) : '—'} />
+        <DetailField label="Balance" value={formatCurrency(balance)} />
+        {snap.institution ? (
+          <DetailField label="Institution" value={snap.institution as string} />
+        ) : null}
+      </div>
+    );
+  }
+
+  if (entry.entityType === 'ACCOUNT_VALUATION') {
+    const value = Number(snap.value ?? 0);
+    return (
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <DetailField label="Date" value={snap.date ? formatDate(String(snap.date)) : '—'} />
+        <DetailField label="Value" value={formatCurrency(value)} />
+        <DetailField label="Account" value={resolveAccount(snap.accountId as string)} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
 export function Activity() {
   const { activities, total, page, loading, fetchActivities } =
     useActivityStore();
   const { accounts, fetchAccounts } = useAccountsStore();
+  const { categories, fetchCategories } = useCategoriesStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [filters, setFilters] = useState<ActivityFilters>(() => {
@@ -74,7 +178,8 @@ export function Activity() {
 
   useEffect(() => {
     fetchAccounts();
-  }, [fetchAccounts]);
+    fetchCategories();
+  }, [fetchAccounts, fetchCategories]);
 
   useEffect(() => {
     fetchActivities(filters, 1);
@@ -83,7 +188,9 @@ export function Activity() {
   const totalPages = Math.ceil(total / 20);
 
   const accountName = (id: string | null | undefined) =>
-    id ? accounts.find((a) => a.id === id)?.name ?? '(Deleted account)' : '';
+    id ? accounts.find((a) => a.id === id)?.name ?? '(Deleted account)' : '—';
+  const categoryName = (id: string | null | undefined) =>
+    id ? categories.find((c) => c.id === id)?.name ?? '(Deleted category)' : '—';
 
   const summarize = (entry: ActivityLogEntry): string => {
     if (entry.summary) return entry.summary;
@@ -259,11 +366,13 @@ export function Activity() {
                       {isOpen && (
                         <TableRow>
                           <TableCell colSpan={6} className="bg-muted/30">
-                            <pre className="overflow-x-auto rounded p-3 text-xs">
-                              {entry.snapshot
-                                ? JSON.stringify(entry.snapshot, null, 2)
-                                : '(no snapshot)'}
-                            </pre>
+                            <div className="px-2 py-3">
+                              <ActivityDetail
+                                entry={entry}
+                                resolveAccount={accountName}
+                                resolveCategory={categoryName}
+                              />
+                            </div>
                           </TableCell>
                         </TableRow>
                       )}
