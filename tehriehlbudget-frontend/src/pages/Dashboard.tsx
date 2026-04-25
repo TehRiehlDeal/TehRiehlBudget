@@ -27,6 +27,46 @@ function formatCurrency(value: number) {
   return value < 0 ? `-$${abs}` : `$${abs}`;
 }
 
+// Owns its own input state so keystrokes don't re-render the parent Dashboard
+// — that was reflowing the recharts pie/bar charts and making their labels
+// flicker out for ~5s of animation replay on every character typed.
+function AdvisorFollowUpForm({
+  disabled,
+  onSubmit,
+}: {
+  disabled: boolean;
+  onSubmit: (value: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = value.trim();
+    if (!trimmed || disabled) return;
+    setValue('');
+    await onSubmit(trimmed);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex gap-2">
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Ask a follow-up..."
+        disabled={disabled}
+      />
+      <Button
+        type="submit"
+        size="sm"
+        disabled={!value.trim() || disabled}
+        aria-label="Send"
+      >
+        <Send className="size-4" />
+      </Button>
+    </form>
+  );
+}
+
 type RangeKey = 'this-month' | 'last-30' | 'last-90' | 'ytd';
 
 const RANGE_LABELS: Record<RangeKey, string> = {
@@ -78,7 +118,6 @@ export function Dashboard() {
     sendMessage,
     resetConversation,
   } = useAdvisorStore();
-  const [followUp, setFollowUp] = useState('');
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,14 +125,6 @@ export function Dashboard() {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
   }, [advisorMessages]);
-
-  const handleSendFollowUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = followUp.trim();
-    if (!trimmed || advisorLoading) return;
-    setFollowUp('');
-    await sendMessage(trimmed);
-  };
 
   const handleRestart = async () => {
     resetConversation();
@@ -415,22 +446,10 @@ export function Dashboard() {
                   </div>
                 )}
               </div>
-              <form onSubmit={handleSendFollowUp} className="flex gap-2">
-                <Input
-                  value={followUp}
-                  onChange={(e) => setFollowUp(e.target.value)}
-                  placeholder="Ask a follow-up..."
-                  disabled={advisorLoading}
-                />
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={!followUp.trim() || advisorLoading}
-                  aria-label="Send"
-                >
-                  <Send className="size-4" />
-                </Button>
-              </form>
+              <AdvisorFollowUpForm
+                disabled={advisorLoading}
+                onSubmit={sendMessage}
+              />
             </div>
           )}
         </CardContent>
